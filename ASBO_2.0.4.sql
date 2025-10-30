@@ -119,12 +119,12 @@ with a as (
 -- Sub-CTE: Project subscriptions forward 30 days (adapted from ASBO_Colt logic)
 , subscription_projected_30d as (
     select
-        sub.partnumber as product_part_number,
+        partnumber as product_part_number,
         case when FULFILLMENT_FREQ_UOM in ('mon','month') then dateadd('month', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
              when FULFILLMENT_FREQ_UOM in ('week') then dateadd('week', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
              when FULFILLMENT_FREQ_UOM in ('day') then dateadd('day', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
              else null end as ext_NEXT_FULFILLMENT_DTTM,
-        sum(LINE_QUANTITY) as AS_qty
+        LINE_QUANTITY as AS_qty
     from (
         select
             SUBSCRIPTION_ID,
@@ -132,7 +132,7 @@ with a as (
             NEXT_FULFILLMENT_DTTM::date as NEXT_FULFILLMENT_DTTM,
             FULFILLMENT_FREQ,
             lower(FULFILLMENT_FREQ_UOM) as FULFILLMENT_FREQ_UOM,
-            sum(LINE_QUANTITY) as LINE_QUANTITY
+            LINE_QUANTITY
         from edldb.cdm.subscription_lines_snapshot sub
         where snapshot_date = (select max(snapshot_date) from edldb.cdm.subscription_lines_snapshot where snapshot_date <= current_date)
             and status = 'Active'
@@ -141,7 +141,6 @@ with a as (
             and fulfillment_freq_uom is not null
             and NEXT_FULFILLMENT_DTTM::date >= current_date + 1
             and partnumber in (select SKU from a)  -- Filter to our target products
-        group by 1, 2, 3, 4, 5
     ) sub
     cross join (
         select common_date_dttm - current_date as number
@@ -152,7 +151,6 @@ with a as (
                when FULFILLMENT_FREQ_UOM in ('week') then dateadd('week', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
                when FULFILLMENT_FREQ_UOM in ('day') then dateadd('day', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
                else null end between current_date + 1 and current_date + 30
-    group by 1, 2
 )
 
 -- Sub-CTE: Apply pull-forward days and success rate adjustments

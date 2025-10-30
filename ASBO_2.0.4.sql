@@ -100,64 +100,120 @@ with a as (
 )
 
 -- ============================================================================
--- CTE 'e' - AUTOSHIP DEMAND & BACKORDER ANALYSIS (INTEGRATED SCORECARD-BASED LOGIC)
+-- CTE 'e' - AUTOSHIP DEMAND & BACKORDER ANALYSIS (ENHANCED WITH COLT PROJECTION LOGIC)
 -- ============================================================================
--- UPDATED FROM: chewybi.subscription_order_lines (DEPRECATED)
--- NEW SOURCE: sc_autoship_sandbox.as_sc_autoship_backorders (SNOWFLAKE COMPATIBLE)
--- 
--- KEY CHANGES:
--- 1. Data Source: Changed from subscription_order_lines to as_sc_autoship_backorders
--- 2. Business Logic: Uses autoship_units for demand and backorder_units for backorder analysis
--- 3. Time Windows: AS Demand from last 30 days, Backorder Units from 7/30 day trailing windows
--- 4. Integration: Combines autoship demand and backorder metrics in single CTE
--- 
--- CROSS-CORRELATION VALIDATION:
--- - autoship_units (last 30 days) correlates with AS Demand (forward-looking 30-days)
--- - backorder_units (trailing windows) matches AS Backorder Units patterns
--- - Time windows align with Knime_ASBO_Ethos.csv output structure
+-- ENHANCED VERSION: Combines ASBO_Colt's forward-looking subscription projection
+-- with historical backorder metrics for comprehensive autoship analysis
+--
+-- KEY IMPROVEMENTS FROM ASBO_COLT:
+-- 1. TRUE Forward-Looking AS Demand: Projects actual subscription events 30 days forward
+-- 2. Pull-Forward Day Integration: Accounts for operational AS fulfillment timing
+-- 3. Success Rate Adjustments: Applies realistic decay factors (0.87→0.60) by days out
+-- 4. Subscription Extrapolation: Extends recurring subscriptions across 30-day window
+--
+-- RETAINED FROM ORIGINAL:
+-- - Historical backorder metrics (BO_Units_7d, BO_Units_30d, Weeks_with_ASBO)
+-- - Product filtering and company-specific logic
 -- ============================================================================
+
+-- Sub-CTE: Project subscriptions forward 30 days (adapted from ASBO_Colt logic)
+, subscription_projected_30d as (
+    select
+        sub.partnumber as product_part_number,
+        case when FULFILLMENT_FREQ_UOM in ('mon','month') then dateadd('month', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
+             when FULFILLMENT_FREQ_UOM in ('week') then dateadd('week', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
+             when FULFILLMENT_FREQ_UOM in ('day') then dateadd('day', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
+             else null end as ext_NEXT_FULFILLMENT_DTTM,
+        sum(LINE_QUANTITY) as AS_qty
+    from (
+        select
+            SUBSCRIPTION_ID,
+            partnumber,
+            NEXT_FULFILLMENT_DTTM::date as NEXT_FULFILLMENT_DTTM,
+            FULFILLMENT_FREQ,
+            lower(FULFILLMENT_FREQ_UOM) as FULFILLMENT_FREQ_UOM,
+            sum(LINE_QUANTITY) as LINE_QUANTITY
+        from edldb.cdm.subscription_lines_snapshot sub
+        where snapshot_date = (select max(snapshot_date) from edldb.cdm.subscription_lines_snapshot where snapshot_date <= current_date)
+            and status = 'Active'
+            and skip_item_next = 'FALSE'
+            and one_time_flag = 'FALSE'
+            and fulfillment_freq_uom is not null
+            and NEXT_FULFILLMENT_DTTM::date >= current_date + 1
+            and partnumber in (select SKU from a)  -- Filter to our target products
+        group by 1, 2, 3, 4, 5
+    ) sub
+    cross join (
+        select common_date_dttm - current_date as number
+        from edldb.chewybi.common_date cd
+        where common_date_dttm between current_date and current_date + 30  -- 30-day window
+    ) cd
+    where case when FULFILLMENT_FREQ_UOM in ('mon','month') then dateadd('month', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
+               when FULFILLMENT_FREQ_UOM in ('week') then dateadd('week', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
+               when FULFILLMENT_FREQ_UOM in ('day') then dateadd('day', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
+               else null end between current_date + 1 and current_date + 30
+    group by 1, 2
+)
+
+-- Sub-CTE: Apply pull-forward days and success rate adjustments
+, subscription_adjusted as (
+    select
+        sub.product_part_number,
+        ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) as order_drop_date,
+        AS_qty,
+        -- Apply success rate decay based on days out (from ASBO_Colt lines 90-95)
+        case when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 1 then AS_qty * 0.87
+             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 2 then AS_qty * 0.83
+             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 3 then AS_qty * 0.79
+             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 4 then AS_qty * 0.76
+             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 5 then AS_qty * 0.63
+             else AS_qty * 0.6 end as AS_qty_adj
+    from subscription_projected_30d sub
+    left join (
+        select
+            day_date_daily,
+            PULL_FORWARD_DAYS
+        from EDLDB.SC_SANDBOX.AS_PULL_FORWARD_EVENTS pfe
+        join (
+            select
+                day_date_daily,
+                max(event_date) as event_date
+            from EDLDB.SC_SANDBOX.AS_PULL_FORWARD_EVENTS
+            cross join (select distinct common_date_dttm as day_date_daily
+                        from edldb.chewybi.common_date
+                        where common_date_dttm between current_date and current_date + 30) cd
+            where event_date <= day_date_daily
+            group by day_date_daily
+        ) ddd on ddd.event_date = pfe.event_date
+        group by 1, 2
+    ) pfe on pfe.day_date_daily = sub.ext_NEXT_FULFILLMENT_DTTM
+    where order_drop_date between current_date + 1 and current_date + 30
+)
+
+-- Main CTE 'e': Combine forward-looking AS Demand with historical backorder metrics
 , e as (
     select
-        asab.product_part_number,
-        -- AS Demand: Use autoship_units from last 30 days (correlates with subscription fulfillment)
-        sum(case when order_placed_date between current_date - 30 and current_date 
-                 then autoship_units else 0 end) as AS_Demand,
-        
-        -- Backorder Units: Use backorder_units from historical periods
-        sum(case when order_placed_date between current_date - 7 and current_date 
-                 then backorder_units else 0 end) as BO_Units_7d,
-        sum(case when order_placed_date between current_date - 30 and current_date 
-                 then backorder_units else 0 end) as BO_Units_30d,
-        
-         -- Weeks with ASBO: Count distinct weeks with backorders in last 30 days (aligned with BO_Units_30d)
-         count(distinct case when order_placed_date between current_date - 30 and current_date 
-                            and backorder_units > 0
-                            then date_trunc('week', order_placed_date) end) as Weeks_with_ASBO
-    from sc_autoship_sandbox.as_sc_autoship_backorders asab
-    join (
-        -- Enhanced product filtering using SCard-based approach
-        select 
-            p.snapshot_date,
-            p.product_part_number
-        from EDLDB.CHEWYBI.PRODUCT_LIFECYCLE_SNAPSHOT p
-        left join chewybi.products pr
-            on p.product_part_number = pr.product_part_number
-        left join chewybi.vendor_agreement_line val
-            on p.product_part_number = val.product_part_number
-            and val.active_agreement = 1
-        where ((not p.product_discontinued_flag and p.PRODUCT_REPLENISHMENT_STATUS in ('Replenishable','One-Time Buy')) or p.product_published_flag)
-            and p.product_company_description = 'Chewy'
-            and pr.parent_company in ('SMUCKER''S RETAIL FOODS')  -- Match our target company
-            and lower(p.product_type) = 'item'
-            and p.snapshot_date between date_trunc('week',current_date) - interval '105 week' and current_date - 1
-            and p.product_merch_classification1 not in ('Programs', 'Virtual Bundle', 'Gift Cards')
-            and p.product_merch_classification1 is not null
-            and p.product_dropship_flag = False
-            and val.vendor_number is not null
-    ) bp
-        on asab.product_part_number = bp.product_part_number
-        and asab.order_placed_date::date = bp.snapshot_date::date
-    group by asab.product_part_number
+        coalesce(sa.product_part_number, asab.product_part_number) as product_part_number,
+
+        -- AS Demand: TRUE forward-looking projection with success rate adjustments
+        sum(coalesce(sa.AS_qty_adj, 0)) as AS_Demand,
+
+        -- Backorder Units: Historical metrics (retained from original)
+        sum(case when asab.order_placed_date between current_date - 7 and current_date
+                 then coalesce(asab.backorder_units, 0) else 0 end) as BO_Units_7d,
+        sum(case when asab.order_placed_date between current_date - 30 and current_date
+                 then coalesce(asab.backorder_units, 0) else 0 end) as BO_Units_30d,
+
+        -- Weeks with ASBO: Count distinct weeks with backorders in last 30 days
+        count(distinct case when asab.order_placed_date between current_date - 30 and current_date
+                           and asab.backorder_units > 0
+                           then date_trunc('week', asab.order_placed_date) end) as Weeks_with_ASBO
+
+    from subscription_adjusted sa
+    full outer join sc_autoship_sandbox.as_sc_autoship_backorders asab
+        on sa.product_part_number = asab.product_part_number
+    where coalesce(sa.product_part_number, asab.product_part_number) in (select SKU from a)
+    group by 1
 )
 -- ============================================================================
 -- CTE 'f' - PDP PERFORMANCE (UPDATED TO SNOWFLAKE SOURCE)

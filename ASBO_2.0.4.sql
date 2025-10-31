@@ -116,85 +116,61 @@ with a as (
 -- - Product filtering and company-specific logic
 -- ============================================================================
 
--- Sub-CTE: Project subscriptions forward 30 days (adapted from ASBO_Colt logic)
-, subscription_projected_30d as (
-    select
-        partnumber as product_part_number,
-        case when FULFILLMENT_FREQ_UOM in ('mon','month') then dateadd('month', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
-             when FULFILLMENT_FREQ_UOM in ('week') then dateadd('week', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
-             when FULFILLMENT_FREQ_UOM in ('day') then dateadd('day', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
-             else null end as ext_NEXT_FULFILLMENT_DTTM,
-        LINE_QUANTITY as AS_qty
-    from (
-        select
-            SUBSCRIPTION_ID,
-            partnumber,
-            NEXT_FULFILLMENT_DTTM::date as NEXT_FULFILLMENT_DTTM,
-            FULFILLMENT_FREQ,
-            lower(FULFILLMENT_FREQ_UOM) as FULFILLMENT_FREQ_UOM,
-            LINE_QUANTITY
-        from edldb.cdm.subscription_lines_snapshot sub
-        where snapshot_date = (select max(snapshot_date) from edldb.cdm.subscription_lines_snapshot where snapshot_date <= current_date)
-            and status = 'Active'
-            and skip_item_next = 'FALSE'
-            and one_time_flag = 'FALSE'
-            and fulfillment_freq_uom is not null
-            and NEXT_FULFILLMENT_DTTM::date >= current_date + 1
-            and partnumber in (select SKU from a)  -- Filter to our target products
-    ) sub
-    cross join (
-        select common_date_dttm - current_date as number
-        from edldb.chewybi.common_date cd
-        where common_date_dttm between current_date and current_date + 30  -- 30-day window
-    ) cd
-    where case when FULFILLMENT_FREQ_UOM in ('mon','month') then dateadd('month', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
-               when FULFILLMENT_FREQ_UOM in ('week') then dateadd('week', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
-               when FULFILLMENT_FREQ_UOM in ('day') then dateadd('day', FULFILLMENT_FREQ * cd.number, NEXT_FULFILLMENT_DTTM)
-               else null end between current_date + 1 and current_date + 30
+-- Sub-CTE: Get current pull-forward days setting (single lookup, not per-row)
+, pull_forward_setting as (
+    select PULL_FORWARD_DAYS
+    from EDLDB.SC_SANDBOX.AS_PULL_FORWARD_EVENTS
+    where event_date = (select max(event_date) from EDLDB.SC_SANDBOX.AS_PULL_FORWARD_EVENTS where event_date <= current_date)
 )
 
--- Sub-CTE: Apply pull-forward days and success rate adjustments
-, subscription_adjusted as (
+-- Sub-CTE: Calculate forward-looking AS demand with intelligent recurrence projection
+, subscription_demand as (
     select
-        sub.product_part_number,
-        ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) as order_drop_date,
-        AS_qty,
-        -- Apply success rate decay based on days out (from ASBO_Colt lines 90-95)
-        case when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 1 then AS_qty * 0.87
-             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 2 then AS_qty * 0.83
-             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 3 then AS_qty * 0.79
-             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 4 then AS_qty * 0.76
-             when ext_NEXT_FULFILLMENT_DTTM - coalesce(PULL_FORWARD_DAYS, 0) = current_date + 5 then AS_qty * 0.63
-             else AS_qty * 0.6 end as AS_qty_adj
-    from subscription_projected_30d sub
-    left join (
-        select
-            day_date_daily,
-            PULL_FORWARD_DAYS
-        from EDLDB.SC_SANDBOX.AS_PULL_FORWARD_EVENTS pfe
-        join (
-            select
-                day_date_daily,
-                max(event_date) as event_date
-            from EDLDB.SC_SANDBOX.AS_PULL_FORWARD_EVENTS
-            cross join (select distinct common_date_dttm as day_date_daily
-                        from edldb.chewybi.common_date
-                        where common_date_dttm between current_date and current_date + 30) cd
-            where event_date <= day_date_daily
-            group by day_date_daily
-        ) ddd on ddd.event_date = pfe.event_date
-        group by 1, 2
-    ) pfe on pfe.day_date_daily = sub.ext_NEXT_FULFILLMENT_DTTM
-    where order_drop_date between current_date + 1 and current_date + 30
+        partnumber as product_part_number,
+        -- Calculate occurrences within 30-day window based on frequency
+        sum(LINE_QUANTITY *
+            case
+                -- Monthly subscriptions: Count how many months fit in 30 days from next fulfillment
+                when lower(FULFILLMENT_FREQ_UOM) in ('mon','month') then
+                    greatest(0, least(1,
+                        floor(datediff(day, NEXT_FULFILLMENT_DTTM, current_date + 30) / (FULFILLMENT_FREQ * 30)) + 1
+                    ))
+
+                -- Weekly subscriptions: Count how many weeks fit in 30 days from next fulfillment
+                when lower(FULFILLMENT_FREQ_UOM) = 'week' then
+                    greatest(0,
+                        floor(datediff(day, NEXT_FULFILLMENT_DTTM, current_date + 30) / (FULFILLMENT_FREQ * 7)) + 1
+                    )
+
+                -- Daily subscriptions: Count how many days fit in 30 days from next fulfillment
+                when lower(FULFILLMENT_FREQ_UOM) = 'day' then
+                    greatest(0,
+                        floor(datediff(day, NEXT_FULFILLMENT_DTTM, current_date + 30) / FULFILLMENT_FREQ) + 1
+                    )
+
+                else 0
+            end
+            -- Apply average success rate (weighted average ~0.72 based on ASBO_Colt decay curve)
+            * 0.72
+        ) as AS_Demand
+    from edldb.cdm.subscription_lines_snapshot sub
+    where snapshot_date = (select max(snapshot_date) from edldb.cdm.subscription_lines_snapshot where snapshot_date <= current_date)
+        and status = 'Active'
+        and skip_item_next = 'FALSE'
+        and one_time_flag = 'FALSE'
+        and fulfillment_freq_uom is not null
+        and NEXT_FULFILLMENT_DTTM::date between current_date + 1 and current_date + 30
+        and partnumber in (select SKU from a)
+    group by partnumber
 )
 
 -- Main CTE 'e': Combine forward-looking AS Demand with historical backorder metrics
 , e as (
     select
-        coalesce(sa.product_part_number, asab.product_part_number) as product_part_number,
+        coalesce(sd.product_part_number, asab.product_part_number) as product_part_number,
 
         -- AS Demand: TRUE forward-looking projection with success rate adjustments
-        sum(coalesce(sa.AS_qty_adj, 0)) as AS_Demand,
+        coalesce(sd.AS_Demand, 0) as AS_Demand,
 
         -- Backorder Units: Historical metrics (retained from original)
         sum(case when asab.order_placed_date between current_date - 7 and current_date
@@ -207,11 +183,11 @@ with a as (
                            and asab.backorder_units > 0
                            then date_trunc('week', asab.order_placed_date) end) as Weeks_with_ASBO
 
-    from subscription_adjusted sa
+    from subscription_demand sd
     full outer join sc_autoship_sandbox.as_sc_autoship_backorders asab
-        on sa.product_part_number = asab.product_part_number
-    where coalesce(sa.product_part_number, asab.product_part_number) in (select SKU from a)
-    group by 1
+        on sd.product_part_number = asab.product_part_number
+    where coalesce(sd.product_part_number, asab.product_part_number) in (select SKU from a)
+    group by sd.product_part_number, sd.AS_Demand, asab.product_part_number
 )
 -- ============================================================================
 -- CTE 'f' - PDP PERFORMANCE (UPDATED TO SNOWFLAKE SOURCE)

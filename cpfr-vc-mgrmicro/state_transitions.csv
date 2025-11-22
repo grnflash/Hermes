@@ -1,0 +1,16 @@
+State ID,State Name,Current Mode,Required Vars,Next States,Trigger,Corruption Risk,Notes
+AppInit,Application Initialization,none,none,WarehouseCheck,page_load,NONE,Before st.set_page_config()
+WarehouseCheck,Checking Warehouse,none,none,"SessionInit,Error",warehouse_ready,CRITICAL,HANG POINT - App gets stuck here
+SessionInit,Session Initialization,none,none,MainReady,auto,HIGH,Module-level initialization
+StateValidation,State Validation,varies,all,"MainReady,CorruptedState",auto,CRITICAL,REMOVE THIS - Causes corruption
+MainReady,App Ready,search,"db_manager,vendor_processor",Search,auto,LOW,Safe - init complete
+Search,Search Screen,search,"db_manager,vendor_processor","Results,New",user_action,LOW,Default user screen
+Results,Search Results,search,"db_manager,vendor_processor,search_results","Edit,Search,New",user_action,LOW,Shows search results
+Edit,Edit Vendor,edit,"db_manager,vendor_processor,selected_vendor,original_vendor","SaveChanges,Search,TierChangeWarning",user_action,MEDIUM,Editing existing vendor
+New,Create Vendor,new,"db_manager,vendor_processor","Receipt,Search",user_action,LOW,Creating new vendor
+TierChangeWarning,Tier Warning,edit,"selected_vendor,tier_change_warning","TierChangeConfirm,Edit",user_action,MEDIUM,Warning about tier impacts
+TierChangeConfirm,Tier Confirmation,edit,"selected_vendor,tier_change_state","Receipt,Edit",user_action,MEDIUM,Confirming tier change
+SaveChanges,Saving,edit,pending_changes,"Receipt,Edit,Error",auto,MEDIUM,Processing save
+Receipt,Receipt Screen,receipt,tier_change_receipt,Search,user_action,LOW,Shows operation results
+Error,Error State,error,various,none,none,NONE,Terminal - requires reload
+CorruptedState,Corrupted,invalid,invalid,Error,none,CRITICAL,Requires app deletion

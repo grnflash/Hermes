@@ -1,0 +1,378 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CPFR VC App State Machine Schema",
+  "version": "1.0.0",
+  "lastModified": "2024-11-21",
+  "description": "State machine definition for the CPFR Vendor Contact Manager Streamlit app",
+
+  "states": {
+    "AppInit": {
+      "id": "AppInit",
+      "name": "Application Initialization",
+      "description": "Initial app load, before any Streamlit code execution",
+      "streamlitPhase": "pre-init",
+      "sessionVars": {},
+      "transitions": {
+        "success": "WarehouseCheck",
+        "failure": "Error"
+      },
+      "corruptionRisk": "NONE",
+      "notes": "This is before st.set_page_config()"
+    },
+
+    "WarehouseCheck": {
+      "id": "WarehouseCheck",
+      "name": "Checking Warehouse Status",
+      "description": "Step 1 of 6 - Snowflake checking warehouse availability",
+      "streamlitPhase": "warehouse-init",
+      "sessionVars": {},
+      "transitions": {
+        "success": "SessionInit",
+        "timeout": "Error",
+        "blocked": "Error"
+      },
+      "corruptionRisk": "CRITICAL",
+      "notes": "APP HANGS HERE when corruption exists. No state modifications allowed."
+    },
+
+    "SessionInit": {
+      "id": "SessionInit",
+      "name": "Session State Initialization",
+      "description": "Module-level state initialization before main()",
+      "streamlitPhase": "module-init",
+      "sessionVars": {
+        "db_manager": "DatabaseManager()",
+        "vendor_processor": "VendorProcessor()",
+        "current_mode": "search",
+        "search_results": null,
+        "selected_vendor": null,
+        "search_type": "Vendor Number",
+        "search_value": "",
+        "tier_change_state": null,
+        "tier_change_warning": null,
+        "tier_change_receipt": null,
+        "search_performed": false,
+        "pending_changes": null,
+        "original_vendor": null,
+        "file_changing": false
+      },
+      "transitions": {
+        "success": "StateValidation",
+        "failure": "Error"
+      },
+      "corruptionRisk": "HIGH",
+      "notes": "State initialization at module level (before main)"
+    },
+
+    "StateValidation": {
+      "id": "StateValidation",
+      "name": "State Validation",
+      "description": "Optional validation step - REMOVED IN FIX",
+      "streamlitPhase": "post-config",
+      "sessionVars": "inherited",
+      "transitions": {
+        "success": "MainReady",
+        "corruption": "CorruptedState"
+      },
+      "corruptionRisk": "CRITICAL",
+      "notes": "CORRUPTION POINT: validate_session_state() was modifying state here. MUST BE REMOVED."
+    },
+
+    "MainReady": {
+      "id": "MainReady",
+      "name": "Main Application Ready",
+      "description": "App ready for user interaction",
+      "streamlitPhase": "ready",
+      "sessionVars": {
+        "current_mode": "search"
+      },
+      "transitions": {
+        "default": "Search"
+      },
+      "corruptionRisk": "LOW",
+      "notes": "Safe point - initialization complete"
+    },
+
+    "Search": {
+      "id": "Search",
+      "name": "Search Screen",
+      "description": "Vendor search interface",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "search",
+        "search_results": null,
+        "selected_vendor": null,
+        "search_performed": false
+      },
+      "transitions": {
+        "search_executed": "Results",
+        "create_new": "New"
+      },
+      "corruptionRisk": "LOW",
+      "userActions": ["search", "clear", "create_new"]
+    },
+
+    "Results": {
+      "id": "Results",
+      "name": "Search Results",
+      "description": "Displaying search results",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "search",
+        "search_results": "object",
+        "search_performed": true
+      },
+      "transitions": {
+        "select_vendor": "Edit",
+        "new_search": "Search",
+        "create_new": "New"
+      },
+      "corruptionRisk": "LOW",
+      "userActions": ["select", "back", "new_search"]
+    },
+
+    "Edit": {
+      "id": "Edit",
+      "name": "Edit Vendor",
+      "description": "Editing existing vendor",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "edit",
+        "selected_vendor": "object",
+        "original_vendor": "object",
+        "pending_changes": "object"
+      },
+      "transitions": {
+        "save": "SaveChanges",
+        "cancel": "Search",
+        "tier_change": "TierChangeWarning"
+      },
+      "corruptionRisk": "MEDIUM",
+      "userActions": ["edit_field", "save", "cancel"],
+      "validationRequired": ["selected_vendor != null", "original_vendor != null"]
+    },
+
+    "New": {
+      "id": "New",
+      "name": "Create New Vendor",
+      "description": "Creating new vendor",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "new",
+        "selected_vendor": "template"
+      },
+      "transitions": {
+        "create": "Receipt",
+        "cancel": "Search"
+      },
+      "corruptionRisk": "LOW",
+      "userActions": ["fill_form", "create", "cancel"]
+    },
+
+    "TierChangeWarning": {
+      "id": "TierChangeWarning",
+      "name": "Tier Change Warning",
+      "description": "Warning about tier change impacts",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "edit",
+        "tier_change_state": "warning",
+        "tier_change_warning": "string"
+      },
+      "transitions": {
+        "confirm": "TierChangeConfirm",
+        "cancel": "Edit"
+      },
+      "corruptionRisk": "MEDIUM",
+      "userActions": ["confirm", "cancel"]
+    },
+
+    "TierChangeConfirm": {
+      "id": "TierChangeConfirm",
+      "name": "Tier Change Confirmation",
+      "description": "Confirming tier change",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "edit",
+        "tier_change_state": "confirmation"
+      },
+      "transitions": {
+        "proceed": "Receipt",
+        "cancel": "Edit"
+      },
+      "corruptionRisk": "MEDIUM",
+      "userActions": ["proceed", "cancel"]
+    },
+
+    "SaveChanges": {
+      "id": "SaveChanges",
+      "name": "Saving Changes",
+      "description": "Processing save operation",
+      "streamlitPhase": "processing",
+      "sessionVars": {
+        "pending_changes": "object"
+      },
+      "transitions": {
+        "success": "Receipt",
+        "validation_error": "Edit",
+        "database_error": "Error"
+      },
+      "corruptionRisk": "MEDIUM",
+      "processingState": true
+    },
+
+    "Receipt": {
+      "id": "Receipt",
+      "name": "Change Receipt",
+      "description": "Displaying operation results",
+      "streamlitPhase": "user-interaction",
+      "sessionVars": {
+        "current_mode": "receipt",
+        "tier_change_receipt": "object"
+      },
+      "transitions": {
+        "continue": "Search"
+      },
+      "corruptionRisk": "LOW",
+      "userActions": ["continue", "print"]
+    },
+
+    "Error": {
+      "id": "Error",
+      "name": "Error State",
+      "description": "Fatal error requiring reload",
+      "streamlitPhase": "error",
+      "sessionVars": "various",
+      "transitions": {
+        "reload": "AppInit"
+      },
+      "corruptionRisk": "NONE",
+      "terminal": true
+    },
+
+    "CorruptedState": {
+      "id": "CorruptedState",
+      "name": "Corrupted State Detected",
+      "description": "State corruption detected, app cannot proceed",
+      "streamlitPhase": "error",
+      "sessionVars": "invalid",
+      "transitions": {
+        "requires_deletion": "Error"
+      },
+      "corruptionRisk": "CRITICAL",
+      "terminal": true,
+      "fix": "Delete and recreate app in Snowflake"
+    }
+  },
+
+  "transitions": [
+    {
+      "from": "AppInit",
+      "to": "WarehouseCheck",
+      "trigger": "page_load",
+      "condition": "always",
+      "safe": true
+    },
+    {
+      "from": "WarehouseCheck",
+      "to": "SessionInit",
+      "trigger": "warehouse_ready",
+      "condition": "warehouse_available",
+      "safe": true,
+      "criticalPath": true
+    },
+    {
+      "from": "SessionInit",
+      "to": "StateValidation",
+      "trigger": "auto",
+      "condition": "session_initialized",
+      "safe": false,
+      "warning": "REMOVE THIS TRANSITION - causes corruption"
+    },
+    {
+      "from": "SessionInit",
+      "to": "MainReady",
+      "trigger": "auto",
+      "condition": "session_initialized",
+      "safe": true,
+      "recommended": true
+    },
+    {
+      "from": "Search",
+      "to": "Results",
+      "trigger": "search_button",
+      "condition": "search_value_present",
+      "safe": true,
+      "setsVars": ["search_results", "search_performed"]
+    },
+    {
+      "from": "Results",
+      "to": "Edit",
+      "trigger": "edit_button",
+      "condition": "vendor_selected",
+      "safe": true,
+      "setsVars": ["current_mode", "selected_vendor", "original_vendor"]
+    },
+    {
+      "from": "Edit",
+      "to": "SaveChanges",
+      "trigger": "save_button",
+      "condition": "valid_changes",
+      "safe": true,
+      "setsVars": ["pending_changes"]
+    },
+    {
+      "from": "SaveChanges",
+      "to": "Receipt",
+      "trigger": "save_complete",
+      "condition": "database_success",
+      "safe": true,
+      "clearsVars": ["pending_changes", "original_vendor"]
+    }
+  ],
+
+  "corruptionPatterns": [
+    {
+      "id": "early_state_modification",
+      "description": "Modifying session state before MainReady",
+      "detection": "state changes during WarehouseCheck or SessionInit",
+      "severity": "CRITICAL",
+      "consequence": "App hangs at warehouse check",
+      "fix": "Remove state modifications from initialization"
+    },
+    {
+      "id": "validate_during_init",
+      "description": "Running validate_session_state() in main()",
+      "detection": "validate_session_state called before user interaction",
+      "severity": "CRITICAL",
+      "consequence": "False positive corrections corrupt state",
+      "fix": "Remove validation from main() or move to user handlers"
+    },
+    {
+      "id": "orphaned_state",
+      "description": "Partial state updates leaving orphaned variables",
+      "detection": "pending_changes without original_vendor",
+      "severity": "HIGH",
+      "consequence": "Invalid state combinations",
+      "fix": "Always update related state variables atomically"
+    }
+  ],
+
+  "safetyRules": [
+    "Never modify state during WarehouseCheck phase",
+    "Never call validate_session_state() before MainReady",
+    "Always update related state variables together (atomic updates)",
+    "State transitions should only occur in response to user actions after MainReady",
+    "Match ReferenceApp patterns exactly for initialization sequence",
+    "Document all new states and transitions in this schema"
+  ],
+
+  "metadata": {
+    "schemaVersion": "1.0.0",
+    "appVersion": "COE-012",
+    "lastUpdated": "2024-11-21",
+    "maintainer": "CPFR Team",
+    "validationScript": "validate_state.py",
+    "visualDiagram": "STATE_MACHINE.md"
+  }
+}

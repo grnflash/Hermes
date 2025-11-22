@@ -20,51 +20,75 @@ from vendor_processor import VendorProcessor, VendorSearchResult
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SESSION_STATE_DEFAULTS = {
-    'db_manager': None,
-    'current_mode': 'search',
-    'search_results': None,
-    'selected_vendor': None,
-    'search_type': 'Vendor Number',
-    'search_value': '',
-    'tier_change_state': None,
-    'tier_change_warning': None,
-    'tier_change_receipt': None,
-    'search_performed': False,
-    'pending_changes': None,
-    'original_vendor': None,
-    'file_changing': False,
-}
+# CRITICAL: Check for reset flag FIRST, before any other initialization
+# This allows us to force a complete reset by setting this flag
+if st.session_state.get('_force_reset', False):
+    # Clear everything except essential objects
+    db_manager = st.session_state.get('db_manager')
+    vendor_processor = st.session_state.get('vendor_processor')
 
+    # Get all keys and delete them
+    keys_to_delete = [key for key in st.session_state.keys() if key not in ['db_manager', 'vendor_processor']]
+    for key in keys_to_delete:
+        del st.session_state[key]
 
-def handle_force_reset():
-    """Clear session state when a force reset is requested."""
-    if not st.session_state.get('_force_reset'):
-        return
+    # Restore essential objects
+    if db_manager:
+        st.session_state.db_manager = db_manager
+    if vendor_processor:
+        st.session_state.vendor_processor = vendor_processor
 
-    for key in list(st.session_state.keys()):
-        if key != '_force_reset':
-            del st.session_state[key]
+    # Unset the reset flag
+    if '_force_reset' in st.session_state:
+        del st.session_state['_force_reset']
 
-    del st.session_state['_force_reset']
+    # Force immediate rerun to apply the reset
     st.rerun()
 
+# Initialize session state - matching ReferenceApp pattern exactly
+if 'db_manager' not in st.session_state:
+    st.session_state.db_manager = DatabaseManager()
 
-def initialize_session_state():
-    """Ensure all session state defaults are populated after page config."""
-    for key, default_value in SESSION_STATE_DEFAULTS.items():
-        if key not in st.session_state:
-            st.session_state[key] = default_value
+if 'vendor_processor' not in st.session_state:
+    st.session_state.vendor_processor = VendorProcessor()
 
-    if 'vendor_processor' not in st.session_state or st.session_state.vendor_processor is None:
-        st.session_state.vendor_processor = VendorProcessor()
+if 'current_mode' not in st.session_state:
+    st.session_state.current_mode = 'search'  # 'search', 'results', 'edit', 'new', 'receipt'
 
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = None
 
-def get_db_manager() -> DatabaseManager:
-    """Lazily initialize and return the DatabaseManager."""
-    if st.session_state.db_manager is None:
-        st.session_state.db_manager = DatabaseManager()
-    return st.session_state.db_manager
+if 'selected_vendor' not in st.session_state:
+    st.session_state.selected_vendor = None
+
+if 'search_type' not in st.session_state:
+    st.session_state.search_type = 'Vendor Number'
+
+if 'search_value' not in st.session_state:
+    st.session_state.search_value = ''
+
+# UI state machine for tier changes
+if 'tier_change_state' not in st.session_state:
+    st.session_state.tier_change_state = None  # None, 'warning', 'confirmation', 'receipt'
+
+if 'tier_change_warning' not in st.session_state:
+    st.session_state.tier_change_warning = None  # Stores warning message
+
+if 'tier_change_receipt' not in st.session_state:
+    st.session_state.tier_change_receipt = None  # Stores receipt data
+
+# Additional state variables not in ReferenceApp - but needed for functionality
+if 'search_performed' not in st.session_state:
+    st.session_state.search_performed = False
+
+if 'pending_changes' not in st.session_state:
+    st.session_state.pending_changes = None
+
+if 'original_vendor' not in st.session_state:
+    st.session_state.original_vendor = None
+
+if 'file_changing' not in st.session_state:
+    st.session_state.file_changing = False
 
 def validate_session_state():
     """
@@ -98,28 +122,19 @@ def main():
     st.set_page_config(
         page_title="CPFR and VC | Vendor Configuration Manager",
         page_icon="📧",
-        layout="wide",
-        initial_sidebar_state="collapsed"  # Hide sidebar by default
+        layout="wide"
+        # initial_sidebar_state="collapsed"  # REMOVED - ReferenceApp doesn't have this
     )
-    handle_force_reset()
-    initialize_session_state()
 
-    try:
-        db_manager = get_db_manager()
-    except Exception as e:
-        st.error(f"❌ Failed to initialize database connection: {e}")
-        st.error("This app must be run in Streamlit in Snowflake (under Projects).")
-        logger.error(f"DatabaseManager initialization failed: {e}", exc_info=True)
-        return
+    # REMOVED - This was causing corruption by modifying state during initialization
+    # validate_session_state() should NEVER be called here
+    # If validation is needed, call it during user interactions, not initialization
 
-    # Validate and reset inconsistent session state (prevents hangs from corrupted state)
-    validate_session_state()
-    
     st.title("📧 CPFR VC Vendor Info Manager")
-    
+
     # Verify connection (silently) - user context display removed per requirements
     try:
-        session = db_manager.get_session()
+        session = st.session_state.db_manager.get_session()
         
         # Connection verification - no UI display
         # User context code kept for potential future use but not displayed

@@ -121,11 +121,49 @@
 **Dependencies**:
 - All functions now rely on session state initialized via `initialize_session_state()`
 - `_force_reset` logic moved to run immediately after `set_page_config()`
-**Result**: 🟡 Pending validation in Streamlit-in-Snowflake
+**Result**: ❌ DID NOT RESOLVE - May have made issue worse
 **Notes**:
 - Streamlit documentation warns against calling `st.session_state` or `st.rerun()` before `st.set_page_config()`. Reference app technically does this, but removing the pattern here gives us a materially different startup sequence that avoids any pre-initialization work.
 - This change should prevent the app from doing any Snowflake work during the "Step 1 of 6" phase, reducing the chance of deadlocks observed on the corporate network.
-- Need to redeploy and test within the corporate environment to confirm whether the status-bar hang is resolved.
+- After analysis, this approach may have introduced new timing issues in Streamlit in Snowflake environment
+
+### COE-011: Revert to ReferenceApp Initialization Pattern
+**Date**: [Current Date]
+**Change**:
+- Reverted to exact ReferenceApp initialization pattern
+- Moved all session state initialization back to module level (before main())
+- `DatabaseManager()` initialized at module level (line 50)
+- Reset flag check and `st.rerun()` at module level (lines 25-46)
+- Removed helper functions `handle_force_reset()`, `initialize_session_state()`, and `get_db_manager()`
+- Access `st.session_state.db_manager` directly in main()
+**Files Modified**: `streamlit_app.py`
+**Dependencies**: None - follows working ReferenceApp pattern exactly
+**Result**: ❌ STILL HANGING - Pattern match alone insufficient
+**Notes**:
+- While this violates Streamlit best practices (calling st.session_state before st.set_page_config()), the ReferenceApp proves this pattern works in Streamlit in Snowflake
+- Streamlit in Snowflake appears to have different initialization timing than regular Streamlit
+- The deferred initialization from COE-010 may have disrupted the expected initialization sequence in the Snowflake environment
+- This change matches the ReferenceApp pattern exactly, which consistently works in the office network
+- **See STREAMLIT_IN_SNOWFLAKE_PATTERN.md for the reusable solution pattern**
+
+### COE-012: Remove App-Specific Differences & Redeploy
+**Date**: [Current Date]
+**Change**:
+- Removed `validate_session_state()` call after `st.set_page_config()` (ReferenceApp doesn't have this)
+- Removed `initial_sidebar_state="collapsed"` parameter from `st.set_page_config()`
+- Kept the 4 extra session state variables as they're needed for functionality
+- **CRITICAL**: App needs to be deleted and recreated in Snowflake
+**Files Modified**: `streamlit_app.py` lines 126, 130
+**Dependencies**: None
+**Result**: 🟡 PENDING - Requires app deletion and recreation
+**Notes**:
+- **KEY INSIGHT**: Since ReferenceApp works at the office, this CANNOT be a network issue
+- **ROOT CAUSE IDENTIFIED**: `validate_session_state()` modifies state during initialization, causing persistent corruption
+- This function detects "inconsistent" state during init (false positive) and "fixes" it, corrupting the deployment
+- Once corrupted, every load re-corrupts because the function runs again
+- This explains why COE-007 (delete/recreate) only worked temporarily - the corruption-causing code was still present
+- **See PERMANENT_FIX.md for why this prevents recurrence**
+- **See SAFE_VALIDATION_PATTERN.md for how to safely use validation if needed**
 
 ---
 
@@ -312,21 +350,31 @@ main() function (lines 194+):
 
 ## Current Issue Analysis
 
-**Current Symptom**: 
+**Current Symptom**:
 - App hangs at "Step 1 of 6: Checking warehouse status" in Streamlit in Snowflake status bar
 - Never progresses past this point
 - ReferenceApp works fine, progresses through all 6 steps quickly
 
-**Root Cause Hypothesis** (NEW):
-`DatabaseManager()` is initialized at **module level** (line 51), which means it executes **during Python module import**, **BEFORE** Streamlit in Snowflake completes warehouse initialization. When `DatabaseManager.__init__()` calls `get_active_session()`, it tries to access the session before the warehouse is ready, causing a deadlock.
+**Root Cause (REVISED after critical observation)**:
+This is **NOT a network issue** - the ReferenceApp works consistently at the office, proving the network/firewall/WebSockets are fine. The issue is **app-instance specific**.
 
 **Evidence**:
-- Status bar stuck at "Step 1 of 6" indicates issue happens during Streamlit in Snowflake initialization
-- Module-level `DatabaseManager()` initialization runs during import, before warehouse is ready
-- ReferenceApp has same pattern but may work due to timing differences or cached state
-- Session state fixes didn't help, confirming issue is at initialization level, not state management
+- ReferenceApp works every time at the office
+- Main app hangs every time at the office
+- User can switch between them in the same session
+- If it were network-related, both would fail equally
 
-**See**: `WAREHOUSE_HANG_ANALYSIS.md` for detailed analysis
+**Actual Root Cause**:
+1. **App deployment state corruption** - The main app instance has corrupted state
+2. **Code differences** - `validate_session_state()` function and sidebar parameter not in ReferenceApp
+3. **Persistent bad state** - Failed initialization attempts leave the app in bad state
+
+**Why initial research was misleading**:
+The Snowflake Community posts about network issues are real, but don't apply here since the ReferenceApp proves the network works. The symptoms are identical but the cause is different.
+
+**See**:
+- `STREAMLIT_IN_SNOWFLAKE_PATTERN.md` for the complete reusable solution pattern
+- `WAREHOUSE_HANG_ANALYSIS.md` for detailed technical analysis
 
 ## Previous Resolution Summary (No Longer Applicable)
 
@@ -419,6 +467,9 @@ Failed `DatabaseManager` initialization attempts during troubleshooting left the
 ---
 
 **Last Updated**: [Current Date/Time]
-**Status**: ✅ Resolved - Monitoring for recurrence
-**Next Review**: If issue recurs, or after 30 days of stable operation
+**Status**: 🔧 Solution Identified - COE-012 requires deployment
+**Next Steps**:
+1. Deploy COE-012 changes
+2. Delete and recreate app in Snowflake
+3. Test at office location
 

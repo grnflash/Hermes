@@ -58,4 +58,3 @@ htmlcov/
 *.swp
 
 # Local Claude context
-claude.md

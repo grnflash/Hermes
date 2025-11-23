@@ -38,10 +38,11 @@ class DatabaseManager:
             if not self.session:
                 raise ConnectionError("No active Snowflake session found. This app must run in Streamlit in Snowflake.")
             
-            # Verify session works
-            test_result = self.session.sql("SELECT 1 as test").collect()
-            if not test_result:
-                raise ConnectionError("Session test query failed")
+            # Verify session works - removed test query to reduce unnecessary queries
+            # Connection will fail naturally if invalid when first used
+            # test_result = self.session.sql("SELECT 1 as test").collect()
+            # if not test_result:
+            #     raise ConnectionError("Session test query failed")
             
             logger.info("Successfully initialized Snowpark session")
         except ImportError:

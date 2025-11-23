@@ -132,21 +132,24 @@ def main():
 
     st.title("📧 CPFR VC Vendor Info Manager")
 
-    # Verify connection (silently) - user context display removed per requirements
-    try:
-        session = st.session_state.db_manager.get_session()
-        
-        # Connection verification - no UI display
-        # User context code kept for potential future use but not displayed
+    # Verify connection (silently) - cached to avoid long-running queries
+    if 'connection_verified' not in st.session_state:
         try:
-            user_info = session.sql("SELECT CURRENT_USER(), CURRENT_ROLE()").collect()
-            # User context available but not displayed (sidebar removed)
-            logger.info(f"User: {user_info[0][0] if user_info else 'Unknown'}, Role: {user_info[0][1] if user_info else 'Unknown'}")
-        except Exception as user_error:
-            logger.warning(f"Could not get user context: {user_error}")
-        
-    except Exception as e:
-        st.error(f"❌ Failed to connect to Snowflake: {e}")
+            session = st.session_state.db_manager.get_session()
+            try:
+                user_info = session.sql("SELECT CURRENT_USER(), CURRENT_ROLE()").collect()
+                logger.info(f"User: {user_info[0][0] if user_info else 'Unknown'}, Role: {user_info[0][1] if user_info else 'Unknown'}")
+                st.session_state.connection_verified = True
+            except Exception as user_error:
+                logger.warning(f"Could not get user context: {user_error}")
+                st.session_state.connection_verified = False
+        except Exception as e:
+            st.error(f"❌ Failed to connect to Snowflake: {e}")
+            st.error("This app must be run in Streamlit in Snowflake (under Projects).")
+            return
+    elif not st.session_state.get('connection_verified', False):
+        # Connection failed previously, show error
+        st.error("❌ Failed to connect to Snowflake")
         st.error("This app must be run in Streamlit in Snowflake (under Projects).")
         return
     

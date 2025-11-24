@@ -38,11 +38,25 @@ class DatabaseManager:
             if not self.session:
                 raise ConnectionError("No active Snowflake session found. This app must run in Streamlit in Snowflake.")
             
+            # Set session timeout to prevent long-running queries
+            try:
+                self.session.sql("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 30").collect()
+                logger.info("Session timeout set to 30 seconds")
+            except Exception as e:
+                logger.warning(f"Could not set session timeout: {e}")
+            
             # Verify session works - removed test query to reduce unnecessary queries
             # Connection will fail naturally if invalid when first used
             # test_result = self.session.sql("SELECT 1 as test").collect()
             # if not test_result:
             #     raise ConnectionError("Session test query failed")
+            
+            # Try to use dedicated warehouse for Streamlit apps
+            try:
+                self.session.sql("USE WAREHOUSE STREAMLIT_XS_WH").collect()
+                logger.info("Using STREAMLIT_XS_WH warehouse")
+            except Exception as e:
+                logger.info(f"Using default warehouse (STREAMLIT_XS_WH not available): {e}")
             
             logger.info("Successfully initialized Snowpark session")
         except ImportError:
@@ -56,6 +70,16 @@ class DatabaseManager:
         if not self.session:
             self._initialize_session()
         return self.session
+    
+    def is_healthy(self) -> bool:
+        """Quick non-blocking health check"""
+        try:
+            session = self.get_session()
+            # Use LIMIT 0 for instant response
+            session.sql("SELECT 1 WHERE 1=0").collect()
+            return True
+        except:
+            return False
     
     def _escape_sql_string(self, value: Any) -> str:
         """Escape string values for SQL safety."""
@@ -103,12 +127,14 @@ class DatabaseManager:
                 SELECT * FROM {self.table_name}
                 WHERE "Vendor Number" = '{search_value}'
                 ORDER BY "Vendor Number", "FILE"
+                LIMIT 10
             """
         else:
             query = f"""
                 SELECT * FROM {self.table_name}
                 WHERE "{search_type}" ILIKE '%{search_value}%'
                 ORDER BY "Vendor Number", "FILE"
+                LIMIT 500
             """
         
         try:
@@ -145,6 +171,7 @@ class DatabaseManager:
             SELECT * FROM {self.table_name}
             WHERE "Vendor Number" = '{vendor_number}'
             ORDER BY "FILE"
+            LIMIT 10
         """
         
         try:

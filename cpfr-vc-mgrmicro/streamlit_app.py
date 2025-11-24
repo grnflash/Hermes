@@ -90,32 +90,6 @@ if 'original_vendor' not in st.session_state:
 if 'file_changing' not in st.session_state:
     st.session_state.file_changing = False
 
-def validate_session_state():
-    """
-    Validate and reset inconsistent session state.
-    This prevents the app from hanging due to corrupted state from abandoned sessions.
-    """
-    # Reset if we have pending changes but no original vendor (inconsistent state)
-    if st.session_state.pending_changes and not st.session_state.original_vendor:
-        logger.warning("Detected inconsistent state: pending_changes without original_vendor. Resetting.")
-        st.session_state.pending_changes = None
-        st.session_state.file_changing = False
-    
-    # Reset tier change state if inconsistent
-    if st.session_state.tier_change_state == 'warning' and not st.session_state.tier_change_warning:
-        logger.warning("Detected inconsistent state: tier_change_state='warning' without tier_change_warning. Resetting.")
-        st.session_state.tier_change_state = None
-    
-    # Reset if we're in receipt mode but no receipt data
-    if st.session_state.current_mode == 'receipt' and not st.session_state.tier_change_receipt:
-        logger.warning("Detected inconsistent state: receipt mode without receipt data. Resetting to search.")
-        st.session_state.current_mode = 'search'
-    
-    # Reset if we're in edit mode but no selected vendor
-    if st.session_state.current_mode == 'edit' and not st.session_state.selected_vendor:
-        logger.warning("Detected inconsistent state: edit mode without selected vendor. Resetting to search.")
-        st.session_state.current_mode = 'search'
-
 def main():
     """Main application entry point"""
     # CRITICAL: st.set_page_config() MUST be the first Streamlit command
@@ -230,11 +204,16 @@ def show_search_screen():
                 st.info("💡 Click 'Search' to check if this vendor already exists")
     
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def cached_search(search_type: str, search_value: str):
+    """Cached vendor search to reduce database hits"""
+    return st.session_state.db_manager.search_vendors(search_type, search_value)
+
 def perform_search(search_type: str, search_value: str):
     """Perform vendor search and transition to results screen"""
     try:
         with st.spinner("Searching vendors..."):
-            df = st.session_state.db_manager.search_vendors(search_type, search_value)
+            df = cached_search(search_type, search_value)
             search_result = st.session_state.vendor_processor.process_search_results(df)
         
         # Mark that a search has been performed

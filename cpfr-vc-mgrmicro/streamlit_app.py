@@ -534,8 +534,12 @@ def show_edit_screen():
             save_vendor_changes(vendor, updated_data)
         
         if back_clicked:
-            st.session_state.current_mode = 'search'
-            st.session_state.search_results = None
+            # If we have search results, go back to results screen; otherwise go to search screen
+            if st.session_state.search_results:
+                st.session_state.current_mode = 'results'
+            else:
+                st.session_state.current_mode = 'search'
+                st.session_state.search_results = None
             st.session_state.selected_vendor = None
             st.rerun()
     
@@ -546,8 +550,12 @@ def show_edit_screen():
         st.markdown("---")
         st.markdown("**Navigation:**")
         if st.button("← Back to Search", key="back_to_search_bottom_warning", help="Return to the search screen"):
-            st.session_state.current_mode = 'search'
-            st.session_state.search_results = None
+            # If we have search results, go back to results screen; otherwise go to search screen
+            if st.session_state.search_results:
+                st.session_state.current_mode = 'results'
+            else:
+                st.session_state.current_mode = 'search'
+                st.session_state.search_results = None
             st.session_state.selected_vendor = None
             st.session_state.tier_change_state = None
             st.session_state.tier_change_warning = None
@@ -858,8 +866,12 @@ def show_receipt_screen():
         st.write(f"**SP Manager_Email:** {updated_vendor.get('SP Manager_Email', 'N/A')}")
         st.write(f"**OVERRIDE_EMAIL:** {updated_vendor.get('OVERRIDE_EMAIL', 'N/A')}")
     
-    # Navigation handled by "Back to Search" button at bottom of edit form
-    # Receipt screen is display-only - no buttons needed here
+    # Navigation button - receipt screen is now standalone, needs navigation
+    st.markdown("---")
+    if st.button("← Back to Search", type="primary", use_container_width=True):
+        st.session_state.current_mode = 'search'
+        st.session_state.tier_change_receipt = None
+        st.rerun()
 
 def show_new_entry_screen():
     """Display new vendor entry form"""

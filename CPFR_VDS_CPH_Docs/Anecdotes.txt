@@ -1,0 +1,45 @@
+P1: Jayda -- Blue Buffalo
+
+The amount of time taken to prep and correct/validate data is probably about 1 hour a week
+
+The aspect of being able to introduce an api for CPFR directly appeals to Blue Buffalo (a major vendor). They are currently weighing the value of investment in VDS fees (3% of COGS up to $400K, + $250K), against the "struggle" of dealing with email-transmitted CPFR data. In conference calls, Blue Buffalo expressed distinct preference for API access anytime possible. this echos statements previously made by Mars and Nestle-purina (the only two larger vendors for Chewy).
+
+NOP data will be a particularly important one to track going forward, with less-than weekly cadence (preferably daily) becoming important as a means to understand when corrections have been absorbed.
+
+FAD lists--this is "future availability date" or a signal to tell the ordering automation to delay posting any orders until the FAD date specified (in other words to pause orders)--this needs broader visibilty--preferably in real-time, so that updates to it are refelected right away.
+
+New item forecasting needs to be something that can be published much sooner than usual. It normally takes a few cycles to get it going [this might be difficult to influence through CPFR alone--though we can support it].
+
+A significatn point of consternation/losses/concern are forecast mismatch thresholds, especially when they overlap sales goals set by promotions. Any time these thresholds exist, hitting or missing the thresholds can mean a big difference in "paybacks" that are guaranteed to vendors, and become areas where inefficiencies are introduced in order to hit these goals. Additionally, if they are broadly missed, it ends up being very costly in terms of guaranteed buy-ups that are not warranted: 
+	- 10% of missed sales may easily tranlate into $5M in unwarranted buy-up based on unclear visibility
+	- In practice this is close to 15 million, annually if no COE corrects it.
+    - The tension between promo incentives increasing buy-up pressure (usually happens at least once a year for the large vendors), and Instock needs to streamline excess inventory is not going away any time soon.
+
+
+P2: Bridget -- Mars/Ethos
+
+Prep/validation/COE (correction of errors), about 2 hours a week 
+
+Tangential opportunity to surface better visibility around transportation/MOQ issues. This leads to lots of escalations at end of period (month, quarter). Approximately 2 days out of the week are spent rectifying. This would require adding new feature to the portal beyond it's starting scopoe to add visibility and alert MOQ/Transpo issues, but this becomes incremental (and much more feasible) once the portal is implemented.
+
+Confirmed request to provide daily-available data via portal--in particular PDP-OOS, fill rate, forecast. Recovery cycles for PDP and fill rate in particular often happen in cycles of a few days rather than weeks or a whole month. This would be worth at least 1 hour per week in time spent on updates and exchanges. Probably worth a 50% improvement of OOS for affected items. [about 0.1% OOS co-wide though, but given that affected items would be trending toward outlier status, this might be closer to 1% of inventory for those vendors]
+
+
+P3: Henry -- Direct distributors
+
+Estimate that improved consistency and COE is worth 2 - 3 hrs per week.
+
+Lots of time spent rectifying discontinued.
+
+Tangential opportunity to facilitate cleanup of SKU/vendor-numbers assignments by providing visibility to unused but not-deactivated vendor numbers and agreement lines. This becomes a particularly acute (not to mention insidious) problem when, for instance, a price increases on a vendor's primary vendor number (which would by-nature have an active agreement), but where an lower price exists on an obsolete vendor number (which would not naturally get any updates to prices) tied to the same vendor and SKU, but which should have been deactivated, and wasn't. [Vendors often--though not always--receive new vendor numbers when new or updated vendor agreements are put into place--it's quite common for a long-time vendor to have multiple active agreements and vendor numbers, as well as some expired/inactive ones] This would also greatly help in preventing items from getting added to the wrong vendor number (Most vendors don't even know their vendor number... you can't look it up easily, and even tickets submitted through the portal don't have a place to enter it).
+
+P4: Nihar -- Nestle Purina
+
+Deals with, unnecessary churn on emails... probably 5hrs a week where issues of are impacted by CPFR consistency, availability, or where reduced COE would contribute.
+
+Would prefer to prioritize portal access on vendor side over advanced thresholding/signaling features--would make a bigger difference in both alignment and follow-up.
+
+
+-----
+
+S1: Side note (also from Henry) -- Another opportunity that is also a bit tangential (a little indeterminate, but "feels" like it fits somewhere between CPFR and vendor compliance--both of which are planned to move into the portal)  is to improve the review chain for MOQ changes made by vendors (vendors can do this via self-service in the portal). Current state is that when vendors enter a MOQ (minimum order quantity--important that this is matched to UOM [unit of measure] and casepack or pallet count with integer divisibility) update, the CM (category manager) approves it, and then it goes live after which any discrepancies have to be fixed by fast-follow from the ISM (instock manager). Consideration should be given for putting the ISM into an earlier stage of the approval to ensure that setup is correct and everyone on the instock side doesn't end up scrambling to catch up. This could be as simple as rerouting tickets, but more nuance may also be needed.

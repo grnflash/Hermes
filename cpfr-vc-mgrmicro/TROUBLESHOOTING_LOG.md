@@ -125,7 +125,11 @@
 **Notes**:
 - Streamlit documentation warns against calling `st.session_state` or `st.rerun()` before `st.set_page_config()`. Reference app technically does this, but removing the pattern here gives us a materially different startup sequence that avoids any pre-initialization work.
 - This change should prevent the app from doing any Snowflake work during the "Step 1 of 6" phase, reducing the chance of deadlocks observed on the corporate network.
+<<<<<<< HEAD
 - After analysis, this approach may have introduced new timing issues in Streamlit in Snowflake environment
+=======
+- After analysis, we determined the bigger UX issue was stale `search_results` cached in session state. Added a `refresh_search_results()` helper and now refresh results after edits/inserts and before navigating back to the results view so the UI always reflects the latest Snowflake data.
+>>>>>>> 9297f414ce754ac05e2d7c4a9cf5e6cf58ae8bdd
 
 ### COE-011: Revert to ReferenceApp Initialization Pattern
 **Date**: [Current Date]

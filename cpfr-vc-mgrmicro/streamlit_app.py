@@ -90,6 +90,62 @@ if 'original_vendor' not in st.session_state:
 if 'file_changing' not in st.session_state:
     st.session_state.file_changing = False
 
+def validate_session_state():
+    """
+    Validate and reset inconsistent session state.
+    This prevents the app from hanging due to corrupted state from abandoned sessions.
+    """
+    # Reset if we have pending changes but no original vendor (inconsistent state)
+    if st.session_state.pending_changes and not st.session_state.original_vendor:
+        logger.warning("Detected inconsistent state: pending_changes without original_vendor. Resetting.")
+        st.session_state.pending_changes = None
+        st.session_state.file_changing = False
+    
+    # Reset tier change state if inconsistent
+    if st.session_state.tier_change_state == 'warning' and not st.session_state.tier_change_warning:
+        logger.warning("Detected inconsistent state: tier_change_state='warning' without tier_change_warning. Resetting.")
+        st.session_state.tier_change_state = None
+    
+    # Reset if we're in receipt mode but no receipt data
+    if st.session_state.current_mode == 'receipt' and not st.session_state.tier_change_receipt:
+        logger.warning("Detected inconsistent state: receipt mode without receipt data. Resetting to search.")
+        st.session_state.current_mode = 'search'
+    
+    # Reset if we're in edit mode but no selected vendor
+    if st.session_state.current_mode == 'edit' and not st.session_state.selected_vendor:
+        logger.warning("Detected inconsistent state: edit mode without selected vendor. Resetting to search.")
+        st.session_state.current_mode = 'search'
+
+
+def refresh_search_results(show_warning: bool = False):
+    """
+    Re-run the most recent search so cached results stay in sync with the database.
+    Also clears the search cache to ensure fresh data on subsequent searches.
+    """
+    # Clear the search cache to prevent stale data
+    cached_search.clear()
+    
+    if not st.session_state.get('search_performed'):
+        return
+
+    search_type = st.session_state.get('search_type')
+    search_value = st.session_state.get('search_value')
+
+    if not search_type or not search_value:
+        st.session_state.search_results = None
+        st.session_state.search_performed = False
+        return
+
+    try:
+        df = st.session_state.db_manager.search_vendors(search_type, search_value)
+        refreshed = st.session_state.vendor_processor.process_search_results(df)
+        st.session_state.search_results = refreshed
+        st.session_state.search_performed = True
+    except Exception as e:
+        if show_warning:
+            st.warning("Unable to refresh search results automatically.")
+        logger.error(f"Failed to refresh search results: {e}")
+
 def main():
     """Main application entry point"""
     # CRITICAL: st.set_page_config() MUST be the first Streamlit command
@@ -767,6 +823,10 @@ def confirm_vendor_changes():
                 fresh_vendor.update(changes)
                 logger.warning(f"Could not fetch fresh data: {e}")
             
+            # Clear search cache to ensure fresh data on subsequent searches
+            cached_search.clear()
+            refresh_search_results()
+            
             # Create receipt data
             receipt_data = {
                 'vendor_number': vendor_number,
@@ -868,10 +928,23 @@ def show_receipt_screen():
     
     # Navigation button - receipt screen is now standalone, needs navigation
     st.markdown("---")
-    if st.button("← Back to Search", type="primary", use_container_width=True):
-        st.session_state.current_mode = 'search'
-        st.session_state.tier_change_receipt = None
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔍 View Search Results", use_container_width=True):
+            refresh_search_results(show_warning=True)
+            if st.session_state.search_results:
+                st.session_state.current_mode = 'results'
+                st.session_state.tier_change_receipt = None
+                st.rerun()
+            else:
+                st.info("No search results available. Use 'Back to Search' instead.")
+    with col2:
+        if st.button("← Back to Search", use_container_width=True):
+            st.session_state.current_mode = 'search'
+            st.session_state.tier_change_receipt = None
+            st.session_state.search_results = None
+            st.session_state.selected_vendor = None
+            st.rerun()
 
 def show_new_entry_screen():
     """Display new vendor entry form"""
@@ -1016,6 +1089,10 @@ def save_new_vendor(vendor_data: Dict[str, Any], file_value: str):
                 if field not in ['Vendor Number', 'FILE']:
                     display_value = str(value).strip() if value and str(value).strip() else '(null)'
                     st.write(f"**{field}**: {display_value}")
+            
+            # Clear search cache to ensure fresh data on subsequent searches
+            cached_search.clear()
+            refresh_search_results()
             
             
             # Don't auto-return to search - keep form visible

@@ -1,0 +1,114 @@
+# CPFR Platform & Portal: Evidence Basis from Subject Matter Expert Survey
+
+## Survey Methodology & Scope
+
+Subject matter expert interviews were conducted with senior In-Stock Managers managing relationships with major pet food manufacturers and direct distributors. The ISMs surveyed collectively represent substantial CPFR program scope spanning consumables, health/science, and hard goods categories. Interviews focused on quantifying operational burden, identifying data consistency challenges, and documenting vendor feedback regarding access preferences and collaborative planning friction.
+
+---
+
+## 1. Manual Coordination Overhead & Operational Burden
+
+### Time Investment in Data Preparation and Validation
+
+ISMs report consistent weekly time burdens associated with CPFR data preparation, validation, and correction of errors (COE):
+
+- **1-2 hours per week**: Typical for relationships with stable data flows and mature CPFR processes
+- **2-3 hours per week**: Common where improved consistency and reduced COE would yield measurable impact
+- **5+ hours per week**: Reported in cases where email-based data exchange creates unnecessary churn and where CPFR consistency, availability, or COE issues compound
+
+These time investments represent capacity diverted from strategic vendor collaboration, root-cause analysis, and proactive planning work.
+
+### End-of-Period Escalations
+
+Transportation and minimum order quantity (MOQ) issues create predictable escalation patterns. ISMs report spending approximately **2 days out of each week** rectifying MOQ and transportation constraints that surface at period boundaries (month-end, quarter-end). While improving visibility around these issues extends beyond the initial CPFR platform scope, the frequency and impact of these escalations underscore the value of incremental feature expansion once foundational portal infrastructure is established.
+
+### Discontinued SKU Management
+
+Substantial ISM time is consumed rectifying discontinued SKU status and cleanup. This represents recurring operational friction that could be streamlined through improved data visibility and self-service capabilities.
+
+---
+
+## 2. Data Visibility & Consistency Challenges
+
+### Net Ordering Position (NOP) Visibility
+
+NOP data requires enhanced visibility with daily (or more frequent) cadence to effectively track when corrections have been absorbed into planning cycles. Current weekly cadence creates delays in understanding whether corrective actions have taken effect, extending the feedback loop between issue identification and validation.
+
+### Future Availability Date (FAD) Lists
+
+FAD lists signal to ordering automation when to pause orders until a specified future date. These require broader visibility—preferably real-time—to ensure updates are reflected immediately across all stakeholders. Current fragmented visibility creates coordination gaps between vendor manufacturing schedules and Chewy ordering systems.
+
+### New Item Forecasting
+
+New product introductions require forecast publication substantially sooner than current processes allow. Typical NPI forecasting takes multiple cycles to stabilize, creating early-stage planning friction. While CPFR data access improvements may not directly accelerate NPI forecast generation, platform capabilities can support faster distribution once forecasts are available.
+
+### Forecast Mismatch Thresholds & Promotional Tensions
+
+Forecast accuracy thresholds create significant financial exposure when misaligned with promotional sales goals. Threshold misses directly impact vendor payback guarantees, creating incentives that can drive inefficient inventory decisions.
+
+**Documented impact**: A single instance of threshold-driven forecast mismatch resulted in approximately **$5 million in unwarranted buy-up** due to unclear visibility into forecast accuracy relative to promotional expectations. Based on analysis of recurring threshold miss patterns, this issue class represents an estimated **$15 million annually** in avoidable cost if not corrected through improved data visibility and governance.
+
+The structural tension between promotional incentives (which increase buy-up pressure) and in-stock efficiency goals (which prioritize inventory optimization) creates recurring exposure. Major vendor relationships experience this dynamic at least annually, making improved forecast visibility and consistent data sharing critical to reducing financial waste.
+
+---
+
+## 3. Vendor Self-Service Preferences & API Demand
+
+### Direct Vendor Feedback: API Access Preference
+
+In conference calls, **Blue Buffalo** expressed distinct preference for API access to CPFR data, explicitly weighing this capability against the cost of VDS tenancy (3% of COGS up to $400K plus $250K). Blue Buffalo characterized current email-based CPFR data transmission as a "struggle" and indicated that API availability would be a significant decision factor in their vendor data services investment evaluation.
+
+This preference echoes previous statements from **Mars** and **Nestle-Purina**—the two largest vendors in the CPFR program. The consistency of this feedback across major vendor relationships indicates that API access is not an isolated request but a systematic preference among sophisticated vendor partners.
+
+### Portal Access Prioritization
+
+Vendor feedback emphasizes portal access over advanced thresholding or signaling features for initial rollout. Self-service data access is viewed as delivering greater immediate value in both vendor-Chewy alignment and collaborative follow-up than incremental analytical sophistication. This suggests a clear implementation priority: establish reliable self-service access first, then expand analytical capabilities based on adoption patterns.
+
+### Daily Data Cadence Requirements
+
+Vendors have explicitly requested **daily-available data** via portal, particularly for:
+- **PDP out-of-stock (OOS) metrics**
+- **Fill rate performance**
+- **Forecast updates**
+
+Recovery cycles for PDP and fill rate issues often occur over days rather than weeks, making weekly data cadence insufficient for responsive corrective action. Daily availability is estimated to save approximately **1 hour per week** in coordination overhead per affected vendor relationship, while enabling **50% improvement in OOS recovery** for affected items.
+
+While affected items represent approximately 0.1% of company-wide OOS, they trend toward outlier status—suggesting the impacted inventory pool may approach 1% for the vendor cohort most likely to use daily data for rapid response.
+
+---
+
+## 4. SKU and Vendor Number Assignment Cleanup
+
+Visibility into unused-but-not-deactivated vendor numbers and agreement lines would facilitate cleanup of a particularly insidious data quality issue: price discrepancies between active and obsolete vendor numbers for the same SKU.
+
+**Example scenario**: A vendor's primary vendor number receives a price increase (reflected in the active agreement). However, an obsolete vendor number tied to the same SKU—with a lower historical price—remains active but does not receive price updates. This creates ordering confusion and potential cost discrepancies.
+
+This issue is especially acute because:
+- Vendors typically do not know their own vendor numbers
+- Vendor numbers are not easily searchable
+- Portal ticket submissions lack fields for vendor number entry
+- Long-term vendors often accumulate multiple active agreements and vendor numbers, plus expired/inactive entries
+
+Improved visibility would help prevent items from being added to incorrect vendor numbers and enable systematic cleanup of legacy data structures.
+
+---
+
+## Summary of Quantified Impacts
+
+The survey evidence documents measurable operational burden and financial exposure:
+
+**Time burden reduction opportunities**:
+- 1-5 hours per ISM per week in CPFR data preparation and COE
+- ~2 days per week addressing MOQ/transportation escalations (opportunity for incremental feature expansion)
+- ~1 hour per week per vendor relationship through daily data availability
+
+**Financial impact from improved visibility**:
+- $5M documented cost avoidance case (single threshold mismatch event)
+- ~$15M estimated annual exposure from recurring forecast threshold issues
+
+**Vendor relationship evidence**:
+- Consistent API access preference across major vendors (Blue Buffalo, Mars, Nestle-Purina)
+- Explicit daily data cadence requirements for operational responsiveness
+- Clear prioritization of portal self-service over advanced analytical features
+
+This evidence base supports the business case for CPFR platform modernization by documenting specific, quantifiable pain points experienced by senior ISMs managing substantial vendor relationship portfolios. The convergence of operational burden, financial exposure, and vendor demand creates a compelling case for investment in governed data infrastructure and self-service portal capabilities.

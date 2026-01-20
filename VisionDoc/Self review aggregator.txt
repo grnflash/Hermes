@@ -1,0 +1,43 @@
+Self review aggregator
+
+I am really enjoying my time at chewy. I feel like I am surrounded by professionals with a high level of competency, and I have plenty of opportunities to learn from my peers. The goals are challenging in the right ways and give me a chance to flex my skills, although perhaps a bit less often than I'd like.
+
+I've been at chewy for a little over 8 months (started 4/15/25, now 12/23/25), and I feel like I've integrated well with my role and my peers. I rarely struggle with the subject matter and I can relate well to the concerns, goals, and pain points of my peers. In the time that I've been in this role, I've experienced two changes of management, for a total of three bosses in only 8 months (actually it was initially all three in just the first three months. Though the role itself has not changed, many of the priorities certainly did). In all of these management scenarios, I've been able to learn from different styles and approaches, and I feel like on balance, more was added than taken away.
+
+In my role, I interact with team members at virutally all levels of the org (exceptions maybe for FC personnel). Because of consistent exposure to senior leadership, I feel like--although it's not perfected yet--I've made great strides to improve my voice of executive presence when speaking or drafting written works. On the filp side, I've been able to add technical rigor and systems-thinking to operating practices and tools we use, and this is a definite point where my stregths overlap my the expectations of a C6 (my management level).
+
+I have received feedback that my leadership has already recognized my technical chops, although I think this may belie a perception of over-bias, and that I spend a relatively smaller amount of time and attention on business processes and ways of working. I believe, for my part, that some of this is merely sequential, and that once many of the foundational elements my current agenda are behind me, that this will naturally evolve into a more present and visible focus on utilzing business process gaps to drive tool and workflow solutions.
+
+I established a CPFR roadmap early in my tenure, and although shorter term projects have come and gone, I have been one of the only voices consistently "beating the drum" about the long-range needs, and goals for CPFR at chewy.
+
+Since May, I have managed the weekly outbound CPFR reports, including extracting, processing and sending Tier1 emails myself. Tier1 covers the 10 vendors that make up the majority of Chewy sales and revenue. A major part of these duties is constant maintenance of vendor contacts, and collaborating with ISMs to set tiers and service levels. During that time, we:
+
+* added 1172 new vendors
+* added support for 650 direct ship vendors
+* created a new-vendor onboarding process in cooperation with EFE team
+* merged three vendor management systems into 1
+* added self-service interface for ISMs/CMs to update vendor info
+* fulfilled 417 CPFR vendor maintenance requests since May
+* fulfilled 181 VPP tickets since June
+* improved CPFR reporting reliability such that T1 reports could move from Wednesdays to Mondays, freeing up the bulk of the week for planning.
+* established and strengthened partnerships with VDS, EFE, vet, frozen, hardgoods, merch-analytics, replen-tech, retail product management, and our core BI & VC/Chargeback teams.
+
+
+During that time there have been many change-management opportunities.
+1. Vertica to Snowflake enterprise migration. Despite initial assurances that all of the vertica-based queries would migrate cleanly over, this turned out not to be inconsistent at best, requiring two round of remediation. 
+	a. The first round revised 358 lines of query code in cooperation with BIE
+	b. After it was realized that more upstream sources had been degraded post-migration, I personally revised 1772 lines of query code, and quality checked with sr. ISMs.
+2. Managed technical implementation of:
+	a. Integration of Tier 1 reports with automated email system
+	b. Mail compression to allow seamless transmission of large files and resloving long-standing email size limitations that were truncating data sent to large vendors (Nestle, Mars, Blue Buffalo)
+	c. Complete rearchitecture of tier structure to ensure that any/all updates cascade across all tiers simultaneously.
+3. Established roadmap and kicked off CPFR infrastructure 2.0 evolution, including:
+	a. Creation of CPFR/In-stock semantic data platform using best-in-class industry methods, owned and maintained within the supply-chain org.
+	b. Vendor UI/UX requirements that were intitially used to define a tableau cloud presence--later reassessed for inclusion in CPH as a portal module to work in tadnem with VC modules.
+4. Created entitelment framework claiming 1.6m annually toward self-serivice and platform driven initiatives
+
+Also established long-range initiatives leveraging CPFR resources and A.I./M.L.-driven opportunities to further extend in-stock planning capapbilities, including:
+1. Created project Trident:
+	a. an initiative to marry A.I. and causal machine learning to capture scenarios in in-stock/CPFR related planning metrics that will allow both retrograde diagnosis and iterative forward planning.
+	b. Created a decision-network app that can extensibly model in-stock scnearios and functions as the base layer for Trident. Wrote 18,998 lines of code and 239 pages of documentation to ensure that this serves the needs of instock planners and CMs as they search-for and test planning scenarios that play-out over time. This will form the base layer
+	c. 2026 build out of decision models for trident will follow CPFR deep dives and workflow analysis. Each time we do detailed examination of worflow processes, we'll use this info to inform build-out of the model, until such time as it can support digital twinning.

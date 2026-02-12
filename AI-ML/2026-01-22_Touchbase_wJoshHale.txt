@@ -1,0 +1,17 @@
+Josh's Comments
+
+Q: What in-flight projects should we note for Instock to monitor? What's coming down the pike that we should be on the lookout for? How can Instock be prepared to leverage these in our tools or work processes?:
+
+A: CHAINIQ:
+	• Only tool currently in-development
+	• About 1 month to go on development roadmap (not fixed)
+	• Primarily a Instock investigation tool—answers questions like:
+		○ "Why was vendor not ordered this week?"
+		○ "How large were orders for [x] item this time last year?"
+
+Q: What steps could Instock personnel take now that would better prepare us to deal with Chewy ML/AI in the future?:
+
+A:
+	• Add data dictionaries for all sources and transformations
+	• Beef up data governance in general
+	• Related to above--specifically need more uses cases that should be illustrated with something similar to a user story focused on the business workflow and outcomes. Don't constrain to only gaps, should be provided for healthy workstreams as well.

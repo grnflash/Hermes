@@ -1,637 +1,588 @@
-# Claude AI Assistant - Master Context
+# AI Assistant - Master Context
 
-**Template Version**: 2.1  
-**Last Updated**: [DATE]  
-**Purpose**: Efficient AI assistant context for rapid project convergence
+**Version**: 3.0 | **Updated**: 2026-02-12
+
+Orient to this file first. It establishes baseline patterns, principles, and technology context for all work in this repository. Local `CLAUDE.md` files in subdirectories provide project-specific overrides and details.
 
 ---
 
-## **Quick Reference - Read This First**
+## Quick Reference
 
-### **Project Type & Current State**
+### Project Template
 - **Project Name**: [PROJECT_NAME]
-- **Primary Purpose**: [One sentence - what problem does this solve?]
-- **Current Phase**: [Development/Testing/Production/Maintenance]
-- **Key Files**: [List 3-5 most important files to understand the project]
-- **Active Work**: [Current sprint/tasks/focus areas]
+- **Purpose**: [One sentence]
+- **Phase**: [Development/Testing/Production/Maintenance]
+- **Key Files**: [3-5 most important files]
+- **Active Work**: [Current focus]
 
-### **Technology Stack**
+### Technology Stack
 - **Language**: Python 3.11+
-- **Database**: Snowflake (EDLDB) | Vertica (legacy)
-- **Framework**: [Streamlit/FastAPI/CLI]
-- **Key Libraries**: [pandas, sqlalchemy, etc.]
-- **Deployment**: [Docker/Kubernetes/Local]
+- **Database**: Snowflake (EDLDB) -- Vertica is fully sunset; mention only for legacy file disambiguation
+- **Framework**: [Streamlit-in-Snowflake / FastAPI / CLI]
+- **Key Libraries**: [pandas, pydantic, etc.]
+- **Container Runtime**: Docker (via Colima on macOS)
 
-### **Critical Context**
-- **Business Rules**: [Top 2-3 non-negotiable business rules]
-- **Data Sources**: [Primary tables/APIs this project uses]
-- **Integration Points**: [External systems this connects to]
-- **Known Constraints**: [Performance limits, data restrictions, access controls]
-
----
-
-## **AI Assistant Guidelines**
-
-### **Character Encoding & Special Characters**
-- **Code Files**: Use only ASCII characters (avoid emojis, special Unicode symbols)
-- **Documentation (.md)**: Emojis/symbols acceptable for readability (AI assistants can parse these)
-- **UI Elements**: Special characters allowed when explicitly part of user interface
-- **Default Encoding**: UTF-8 for all files, but avoid characters that require it in code
-
-**Rationale**: Special characters in code cause interoperability issues when snippets are passed to other systems, requiring re-encoding. This adds unnecessary retry cycles.
-
-**Examples**:
-```python
-# ❌ Avoid in code files
-def process_data():  # ✅ Status
-    return {"status": "✓"}  # ❌ Checkmark in output
-
-# ✅ Correct approach
-def process_data():  # Status: success
-    return {"status": "success"}  # Use words, not symbols
-```
+### Critical Context
+- **Business Rules**: [Top 2-3 non-negotiable rules]
+- **Data Sources**: [Primary tables/APIs]
+- **Integration Points**: [External systems]
+- **Known Constraints**: [Limits, restrictions, access controls]
 
 ---
 
-## **Development Philosophy & Priorities**
+## AI Assistant Guidelines
 
-### **Working at Chewy - Core Principles**
-1. **Favor Chewy-Compatible Technologies**: Snowflake, Python, Streamlit, Docker
-2. **Data Warehouse First**: EDLDB.SC_SANDBOX is primary workspace for development
-3. **Rich Annotation**: Code should be readable by technical non-programmers
-4. **Test Meaningfully**: Evaluate test value before implementing (impact × frequency)
-5. **Incremental CI/CD**: Small changes, unit tested, minimal integration complexity
-6. **Docker-First Deployment**: Target Docker containers; Kubernetes readiness is a future consideration
+### Using This File Across AI Platforms
+This file is designed to work with any AI coding assistant (Claude, GPT, Gemini, etc.). When starting a session, use a prompt like:
 
-### **Decision-Making Framework**
+> "Orient yourself to CLAUDE.md -- this is our baseline context unless I say otherwise."
+
+The file uses `CLAUDE.md` (uppercase) at the repository root for maximum auto-discovery across tools (Claude Code, Cursor, etc.). Subdirectory files should also use `CLAUDE.md`. Do not rename to `claude-local.md` or similar -- the root-vs-subdirectory hierarchy already handles scoping.
+
+### Character Encoding
+- **Code files**: ASCII only. No emojis or special Unicode in code, strings, or comments.
+- **Documentation (.md)**: Emojis/symbols acceptable for readability.
+- **Rationale**: Special characters cause re-encoding issues when code passes between systems.
+
+### Non-Code Work
+This context file is primarily about coding, but the assistant may also be used for document drafting, planning, analysis, and general knowledge work. When the task is non-code:
+- Follow the **Document & Analysis Standards** section below for written deliverables.
+- Still follow the Decision-Making Framework for ambiguous instructions.
+- Apply the same "explain why, not just what" philosophy to written analysis.
+- Planning and analysis outputs should be structured, concise, and actionable.
+
+---
+
+## Development Philosophy
+
+### Core Principles (Chewy)
+1. **Chewy-Compatible Technologies**: Snowflake, Python, Streamlit, Docker
+2. **Data Warehouse First**: EDLDB.SC_SANDBOX is the primary dev workspace
+3. **Readable Code**: Annotated for technical non-programmers (see Annotation Standards)
+4. **Test Meaningfully**: Evaluate test value before implementing (impact x frequency)
+5. **Incremental Changes**: Small commits, unit tested, minimal integration complexity
+6. **Container-First Deployment**: Docker containers via Colima; K8s handoff to Data Engineering
+
+### Decision-Making Framework
 When uncertain, follow this hierarchy:
-1. **Check Project Context** (this file) for project-specific guidance
-2. **Industry Standards** for well-established patterns (REST, SQL, Docker)
-3. **Ask User** for business rules, priorities, or ambiguous requirements
-4. **Infer & Proceed** for technical implementation details if user is unavailable
+1. **Project Context** (local CLAUDE.md) for project-specific guidance
+2. **This File** for general patterns and principles
+3. **Industry Standards** for well-established patterns (REST, SQL, Docker)
+4. **Ask the User** for business rules, priorities, or ambiguous requirements
+5. **Infer & Proceed** for technical details when the user is unavailable
 
-### **Code Annotation Standards**
-Every function MUST include:
+### Flat Call Structures
+Avoid deeply nested, recursive, or highly cyclic call graphs. They are almost always unnecessarily complex and make code difficult to read and debug. Prefer flattening call structures to 2-3 layers (4 at most).
+
+**When encountering deep nesting in existing code**: Confirm with the user before refactoring, but default to simplification unless there is a clear reason to preserve depth (loss of functionality, meaningful efficiency cost, or divergence from a well-known and broadly adopted pattern).
+
+**Why**: Deeply nested call chains are more often a sign of over-engineering than genuine necessity. Flat, linear code is easier to trace, test, and review.
+
+### Platform Separation
+Streamlit and CLI versions of an application should be independent deployable units. They may share business logic modules and snippet patterns, but should not create cross-platform runtime dependencies. Treat them as separate apps that happen to use common libraries -- the same reason you would not create internal dependencies between macOS and Windows versions of an application.
+
+---
+
+## Code Annotation Standards
+
+### Mandatory (every function, no exceptions)
 ```python
 def function_name(param: Type) -> ReturnType:
     """
     [1-2 sentence purpose statement]
-    
-    [Additional context about business logic or technical approach]
-    
+
     Args:
         param: [Description with business context]
-        
+
     Returns:
         [Description with expected structure/format]
-        
-    Important Notes:
-        - [Why specific libraries are chosen vs. alternatives]
-        - [Performance characteristics: O(n), expected throughput]
-        - [Business rules applied]
-        - [Chewy-specific considerations]
-        
-    Raises:
-        [Expected exceptions and when they occur]
     """
 ```
 
-**Annotation Philosophy**: Favor too much over too little. Use inline comments for complex sections. Explain "why" not just "what".
+### Optional (use when they materially affect correctness, errors, or code review)
+- **Additional context**: Business logic rationale, technical approach
+- **Important Notes**: Library choices, performance characteristics, business rules
+- **Raises**: Expected exceptions and when they occur
+
+**Guideline**: Treat optional sections as mandatory on a case-by-case basis whenever omitting them would lead to errors, omissions, or reduced efficacy of code review. When in doubt, annotate -- favor too much over too little.
+
+### Inline Comments
+Use inline comments when:
+1. **Parameter scope is unclear** or deviates from usage elsewhere in the script
+2. **Uncommon constructs** are used (ternaries, lambdas, list comprehensions with side effects, complex unpacking)
+3. **Cross-cutting concerns** are not obvious to a narrowly focused reader (e.g., `# prevents SQL injection`, `# allows external system to wait gracefully during processing`, `# required for Snowflake session timeout`)
+
+Explain "why", not "what". The code shows what; the comment explains why it matters.
 
 ---
 
-## **Standard Project Structure**
+## Project Structure
 
+### Recommended for Standalone Projects
 ```
 project-name/
-├── claude.md              # AI context (this file)
-├── README.md              # Human documentation
-├── requirements.txt       # Python dependencies
-├── core/                  # Business logic
-│   ├── database_manager.py
-│   ├── business_logic.py
-│   └── data_models.py
-├── ui/                    # Interfaces (CLI/Streamlit)
-├── utils/                 # Shared utilities
-├── tests/                 # Test suite
-│   ├── unit/
-│   ├── integration/
-│   └── test_data/
-├── config/                # Configuration
-└── docs/                  # Additional docs
++-- CLAUDE.md              # AI context (project-specific)
++-- README.md              # Human documentation
++-- requirements.txt       # Python dependencies
++-- core/                  # Business logic (no UI dependencies)
++-- ui/                    # Interface layer (imports from core, never vice versa)
++-- utils/                 # Reusable functions (no project-specific logic)
++-- tests/                 # Mirrors source structure
++-- config/                # Configuration
 ```
 
-**Key Conventions**:
-- **core/**: Pure business logic, no UI dependencies
-- **ui/**: Interface layer, imports from core, never vice versa
-- **utils/**: Reusable functions with no project-specific business logic
-- **tests/**: Mirror source structure (tests/core/, tests/ui/)
+### Streamlit-in-Snowflake Apps
+SiS apps deploy as a flat file set within Snowflake Projects. The standalone structure above is too heavy. Instead:
+```
+project-name/
++-- CLAUDE.md              # AI context
++-- streamlit_app.py       # Main entry point (required name)
++-- database_manager.py    # DB operations module
++-- business_logic.py      # Validation, processing, rules
++-- environment.yml        # Conda dependencies (SiS requirement)
+```
+
+### Key Conventions
+- **Business logic** never imports from UI modules
+- **UI modules** import from business logic, never the reverse
+- **Shared utilities** go in a separate module with no project-specific logic
+- **Tests** mirror the source structure they cover
 
 ---
 
-## **Chewy-Specific Technology Patterns**
+## Snowflake Patterns
 
-### **Snowflake Connection Pattern**
+### Standalone Connection Pattern
+For scripts, CLI tools, and batch jobs that run outside Snowflake:
 ```python
 import snowflake.connector
 from typing import Optional
 
 class SnowflakeManager:
-    """Standard Snowflake connection with Chewy configurations"""
-    
-    def __init__(self, account: str = None, warehouse: str = None):
+    """Snowflake connection with Chewy defaults"""
+
+    def __init__(self, warehouse: str = None, role: str = None):
         """
-        Initialize Snowflake manager with Chewy defaults
-        
+        Initialize with user's assigned Snowflake defaults.
+
         Args:
-            account: Snowflake account (defaults to Chewy account)
-            warehouse: Compute warehouse (defaults to CHEWY_ANALYST_WH)
-            
-        Important Notes:
-            - Uses CHEWY_ANALYST_ROLE for standard access
-            - Targets EDLDB database by default
-            - SC_SANDBOX schema for development work
-            - Auto-reconnect on connection loss
+            warehouse: Override warehouse (defaults to user's assigned WH)
+            role: Override role (defaults to user's assigned role)
         """
+        # Replace these with your assigned Snowflake credentials/role
         self.connection_params = {
-            'account': account or 'chewy.us-east-1',
-            'warehouse': warehouse or 'CHEWY_ANALYST_WH',
+            'account': 'chewy.us-east-1',
+            'warehouse': warehouse or '<YOUR_DEFAULT_WAREHOUSE>',
             'database': 'EDLDB',
             'schema': 'SC_SANDBOX',
-            'role': 'CHEWY_ANALYST_ROLE'
+            'role': role or '<YOUR_DEFAULT_ROLE>'
         }
-        self._connection: Optional[Connection] = None
-    
-    def get_connection(self) -> Connection:
-        """Get or create connection with auto-retry"""
-        if not self._connection or not self._is_connected():
+        self._connection: Optional[snowflake.connector.SnowflakeConnection] = None
+
+    def get_connection(self) -> snowflake.connector.SnowflakeConnection:
+        """Get or create connection with auto-reconnect"""
+        if not self._connection or self._connection.is_closed():
             self._connection = snowflake.connector.connect(**self.connection_params)
         return self._connection
 ```
 
-**Why This Pattern**:
-- Chewy uses specific roles/warehouses for access control
-- EDLDB is standard data warehouse
-- SC_SANDBOX is dev/test schema
-- Auto-reconnect handles intermittent network issues
+### Streamlit-in-Snowflake Connection Pattern
+**CRITICAL**: SiS apps use `get_active_session()` -- never `snowflake.connector.connect()` with credentials.
 
-### **Streamlit vs. CLI Decision Matrix**
+```python
+from snowflake.snowpark.context import get_active_session
 
-| Use Streamlit When | Use CLI When |
-|-------------------|--------------|
-| Occasional users | Frequent/power users |
-| Visual data exploration | Automated/scripted workflows |
-| Multiple input fields | Simple, few parameters |
-| Business user audience | Technical user audience |
-| Browser-based access OK | Speed is critical |
+class DatabaseManager:
+    """Database operations for Streamlit-in-Snowflake apps"""
 
-### **Common Library Choices & Rationale**
+    def __init__(self):
+        self.session = None
+        self._initialize_session()
 
-| Need | Use | Why (vs. alternatives) |
-|------|-----|------------------------|
-| Snowflake connection | `snowflake-connector-python` | Official, well-maintained, Chewy standard |
-| Vertica connection | `vertica-python` | Better than pyodbc for Vertica-specific features |
-| ODBC (if required) | `pyodbc` | Windows compatibility, Chewy ODBC DSN support |
-| Data manipulation | `pandas` | Industry standard, Snowflake native support |
-| Type validation | `pydantic` | Runtime validation, excellent error messages |
-| API framework | `fastapi` | Modern, async, auto-docs, Chewy approved |
-| CLI framework | `click` or `argparse` | click for complex, argparse for simple |
-| Testing | `pytest` | Fixture system, parametrization, industry standard |
+    def _initialize_session(self):
+        """
+        Initialize Snowpark session from SiS environment.
+
+        Returns:
+            None (sets self.session)
+
+        Important Notes:
+            - get_active_session() is the only valid connection method in SiS
+            - Set STATEMENT_TIMEOUT to prevent long-running queries
+            - Attempt dedicated warehouse, fall back to default gracefully
+        """
+        from snowflake.snowpark.context import get_active_session
+        self.session = get_active_session()
+        if not self.session:
+            raise ConnectionError("No active session. Must run in Streamlit-in-Snowflake.")
+
+        # Prevent runaway queries
+        try:
+            self.session.sql("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 30").collect()
+        except Exception as e:
+            logger.warning(f"Could not set session timeout: {e}")
+
+        # Prefer dedicated Streamlit warehouse, fall back to default
+        try:
+            self.session.sql("USE WAREHOUSE STREAMLIT_XS_WH").collect()
+        except Exception:
+            pass  # Default warehouse is acceptable
+
+    def get_session(self):
+        """Lazy session accessor with auto-reconnect"""
+        if not self.session:
+            self._initialize_session()
+        return self.session
+```
+
+**SiS Anti-Patterns**:
+- BAD: `snowflake.connector.connect(user=..., password=...)` -- standalone pattern, will not work
+- BAD: Module-level `session = get_active_session()` -- can hang on app load
+- BAD: Test queries in `__init__` with `.collect()` -- blocks initialization
+- GOOD: Lazy initialization, defensive error handling, session timeout
+
+**SiS Defensive Initialization** (in `streamlit_app.py`):
+```python
+if 'db_manager' not in st.session_state:
+    try:
+        st.session_state.db_manager = DatabaseManager()
+    except Exception as e:
+        st.session_state.db_manager = None  # Allow app to load
+        logger.error(f"DB init failed: {e}")
+```
+
+### Caching in Streamlit-in-Snowflake
+**Cache user intent and navigation state** (search terms, pagination, selected tabs). This preserves continuity when users navigate back to a previous screen.
+
+**Never cache data that represents current DB state** (search results, edit form values, receipt/confirmation data). These must always reflect real-time database state to prevent stale reads after writes.
+
+**Principle**: If another user (or this user in another tab) could change the underlying data, do not cache it. If it is purely local to this user's navigation flow, caching is safe.
+
+```python
+# GOOD: Cache navigation state
+if 'search_type' not in st.session_state:
+    st.session_state.search_type = "Vendor Number"
+
+# BAD: Caching DB query results with long TTL
+@st.cache_data(ttl=300)  # 5 min -- stale data risk on edit screens
+def get_vendor(vendor_id): ...
+
+# GOOD: Fresh query for data that may have just been modified
+def get_vendor(vendor_id):
+    return db_manager.query_vendor(vendor_id)  # Always current
+```
+
+### Snowflake Pitfalls
+1. **Row-by-Row Inserts**: Use batch inserts (10K+ rows)
+   - BAD: `for row in df: cursor.execute(insert_sql, row)`
+   - GOOD: `write_pandas()` or `chunksize=10000`
+
+2. **Fetching Everything**: Don't `fetchall()` when you need a DataFrame
+   - GOOD: `pd.read_sql(query, con)` or `fetch_pandas_batches()`
+
+3. **Connection Leaks**: Always use context managers: `with conn.cursor() as cur:`
+
+4. **Warehouse Sizing**: X-Small/Small for dev, scale for production workloads
 
 ---
 
-## **Testing Strategy & Evaluation**
+## Testing
 
-### **Test Evaluation Framework**
-Before implementing tests, ask:
-1. **Impact**: Could this fail in production and cause significant issues?
-2. **Frequency**: How often will this code path execute?
-3. **Complexity**: Is the code complex enough to benefit from tests?
-4. **Risk**: Is manual testing sufficient, or do we need automation?
+### Evaluation Framework
+Before writing tests, assess: **Impact** (production failure severity) x **Frequency** (how often the code path runs).
 
-**Test Priority Matrix**:
 ```
-High Impact + High Frequency = MUST TEST (business logic, data validation)
-High Impact + Low Frequency = TEST (edge cases, critical failures)
-Low Impact + High Frequency = CONSIDER (performance, user experience)
-Low Impact + Low Frequency = SKIP (trivial paths, obvious code)
+High Impact + High Frequency = MUST TEST
+High Impact + Low Frequency = TEST
+Low Impact + High Frequency = CONSIDER
+Low Impact + Low Frequency = SKIP
 ```
 
-### **Standard Test Structure**
+### Structure
+Follow standard pytest idioms: fixtures for setup, Arrange/Act/Assert pattern, class grouping by component. See [pytest documentation](https://docs.pytest.org/en/stable/) for conventions.
+
 ```python
-# tests/core/test_business_logic.py
 import pytest
-from unittest.mock import Mock, patch
-from core.business_logic import VendorProcessor
 
 class TestVendorProcessor:
-    """Test suite for VendorProcessor with focus on business rules"""
-    
     @pytest.fixture
     def processor(self):
-        """Fixture providing configured processor instance"""
-        return VendorProcessor(validation_rules=self._get_test_rules())
-    
+        return VendorProcessor(validation_rules=get_test_rules())
+
     def test_tier2_requires_6months(self, processor):
-        """
-        Test critical business rule: Tier2 vendors must have 6Months entries
-        
-        Impact: High - could break vendor email distribution
-        Frequency: High - runs on every vendor update
-        """
-        # Arrange
-        vendor_data = {"tier": "Tier2", "vendor_id": "12345"}
-        
-        # Act
-        result = processor.validate_vendor(vendor_data)
-        
-        # Assert
+        """Impact: High | Frequency: High"""
+        result = processor.validate_vendor({"tier": "Tier2", "vendor_id": "12345"})
         assert result.requires_6months is True
-        assert "6Months" in result.required_entries
-    
-    def test_edge_case_empty_vendor_list(self, processor):
-        """
-        Test edge case: empty vendor list should not crash
-        
-        Impact: High - could crash batch processing
-        Frequency: Low - rare but possible
-        """
+
+    def test_empty_vendor_list(self, processor):
+        """Impact: High | Frequency: Low"""
         result = processor.process_vendors([])
         assert result.status == "success"
-        assert result.processed_count == 0
 ```
 
-### **When to Skip Tests**
+### When to Skip Tests
 - Trivial getters/setters with no logic
-- Pass-through functions that just call other tested code
-- Framework-provided functionality (e.g., Django ORM methods)
-- Code you'll delete soon (prototypes, experiments)
+- Pass-through functions that delegate to already-tested code
+- Framework-provided functionality
+- Throwaway prototypes
+
+### Testing Anti-Patterns
+- BAD: Testing private methods directly (test public behavior instead)
+- BAD: Over-specified assertions (`assert result == {full_dict_with_timestamp}`)
+- BAD: Test interdependence (test_b assumes test_a ran first)
+- GOOD: Each test sets up its own state via fixtures
 
 ---
 
-## **Data Management Patterns**
+## Data Management Patterns
 
-### **Standard ETL Pattern**
+### ETL Pattern
 ```python
 def extract_transform_load(source_query: str, target_table: str) -> ProcessingResult:
     """
-    Standard ETL pattern with validation and error handling
-    
+    Standard ETL with validation and atomic loading.
+
     Args:
-        source_query: SQL query to extract source data
-        target_table: Target Snowflake table
-        
+        source_query: SQL to extract source data
+        target_table: Destination Snowflake table
+
     Returns:
-        ProcessingResult with counts and any errors
-        
-    Important Notes:
-        - Validates data before loading (fail fast)
-        - Uses staging table for atomic loads
-        - Logs all transformations for audit
-        - Performance: Batch size 10K rows for optimal Snowflake loading
+        ProcessingResult with row counts and any errors
     """
     try:
-        # Extract
         df = pd.read_sql(source_query, snowflake_conn)
-        logger.info(f"Extracted {len(df)} rows from source")
-        
-        # Transform & Validate
         df_clean = validate_and_transform(df)
-        validation_errors = check_business_rules(df_clean)
-        if validation_errors:
-            return ProcessingResult(status="error", errors=validation_errors)
-        
-        # Load (atomic via staging)
+        errors = check_business_rules(df_clean)
+        if errors:
+            return ProcessingResult(status="error", errors=errors)
+
         load_to_staging(df_clean, f"{target_table}_STAGING")
         swap_tables(f"{target_table}_STAGING", target_table)
-        
         return ProcessingResult(status="success", row_count=len(df_clean))
-        
     except Exception as e:
         logger.error(f"ETL failed: {e}")
         rollback_staging_table(target_table)
         raise
 ```
 
-### **Common Data Validation Patterns**
+### Pydantic Validation
 ```python
-# Use Pydantic for structured validation
 from pydantic import BaseModel, validator, Field
 
 class VendorRecord(BaseModel):
-    """Vendor record with Chewy business rule validation"""
-    
     vendor_id: str = Field(..., min_length=3, max_length=20)
     vendor_name: str = Field(..., max_length=350)
     tier: str = Field(..., regex="^(Tier1|Tier2|3Months|6Months)$")
     email_to: Optional[str] = None
-    email_cc: Optional[str] = None
-    
-    @validator('email_to', 'email_cc')
+
+    @validator('email_to')
     def validate_email_list(cls, v):
-        """Validate semicolon-separated email lists"""
+        """Validates semicolon-separated email lists"""
         if not v:
             return v
-        emails = [e.strip() for e in v.split(';')]
-        for email in emails:
+        for email in [e.strip() for e in v.split(';')]:
             if not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email):
-                raise ValueError(f"Invalid email format: {email}")
-        return v
-    
-    @validator('tier')
-    def validate_tier2_pairing(cls, v, values):
-        """Tier2 requires corresponding 6Months entry (checked at service level)"""
-        # This is a marker for the service layer to enforce
+                raise ValueError(f"Invalid email: {email}")
         return v
 ```
 
 ---
 
-## **Common Pitfalls & Anti-Patterns**
+## Python Pitfalls
 
-### **Snowflake-Specific Pitfalls**
-1. **Row-by-Row Inserts**: Use batch inserts (10K+ rows)
-   - BAD: `for row in df: cursor.execute(insert_sql, row)`
-   - GOOD: `df.to_sql(table, con, method='multi', chunksize=10000)`
-
-2. **Result Set Fetching**: Don't fetch all rows unnecessarily
-   - BAD: `cursor.execute(query); all_rows = cursor.fetchall()`
-   - GOOD: `pd.read_sql(query, con)` or cursor with `fetch_pandas_batches()`
-
-3. **Connection Leaks**: Always close connections
-   - GOOD: Use context managers: `with conn.cursor() as cur:`
-
-4. **Warehouse Costs**: Remember to use appropriate warehouse size
-   - Development: X-Small or Small
-   - Production: Scale based on workload
-
-### **Python/Pandas Pitfalls**
-1. **DataFrame Copies**: Be aware of views vs. copies
-   - BAD: `df_subset = df[df['col'] > 0]` (might be a view)
-   - GOOD: `df_subset = df[df['col'] > 0].copy()` (explicit copy)
-
-2. **Iterating DataFrames**: Avoid row iteration where possible
-   - BAD: `for idx, row in df.iterrows():`
-   - GOOD: `df.apply()` or vectorized operations
-
-3. **Memory Management**: Large DataFrames can exhaust memory
-   - Use chunking: `pd.read_sql(query, con, chunksize=50000)`
-   - Clear unused frames: `del df; gc.collect()`
-
-### **Testing Anti-Patterns**
-1. **Testing Implementation Details**: Test behavior, not internals
-   - BAD: Testing private methods directly
-   - GOOD: Testing public API that uses private methods
-
-2. **Brittle Tests**: Don't over-specify assertions
-   - BAD: `assert result == {"a": 1, "b": 2, "c": 3, "timestamp": "2025-01-01"}`
-   - GOOD: `assert result["a"] == 1 and result["b"] == 2`
-
-3. **Test Interdependence**: Tests should be independent
-   - BAD: test_b assumes test_a ran first
-   - GOOD: Each test sets up its own fixtures
-
-### **Architecture Anti-Patterns**
-1. **UI Business Logic**: Keep business logic in core/
-   - BAD: Streamlit file with SQL queries and validation logic
-   - GOOD: Streamlit imports from core modules
-
-2. **Circular Dependencies**: core/ should never import from ui/
-   - BAD: `core/processor.py` imports `ui/helpers.py`
-   - GOOD: Extract shared code to utils/
-
-3. **God Classes**: Break large classes into focused components
-   - BAD: VendorManager with 30 methods
-   - GOOD: VendorValidator, VendorRepository, VendorService
+1. **DataFrame Copies**: `df[df['col'] > 0]` may be a view. Use `.copy()` when modifying.
+2. **Row Iteration**: Prefer `df.apply()` or vectorized operations over `iterrows()`.
+3. **Memory**: Use `chunksize` for large queries. Clear unused frames with `del df; gc.collect()`.
 
 ---
 
-## **Error Handling Standards**
+## Error Handling
 
-### **Standard Error Pattern**
+### Standard Pattern
 ```python
-import logging
-from typing import Dict, Any
-from dataclasses import dataclass
-
-logger = logging.getLogger(__name__)
-
 @dataclass
 class ProcessingResult:
-    """Standard result object for all operations"""
     status: str  # "success", "error", "warning"
     data: Any = None
     message: str = ""
     errors: list = None
-    
-class BusinessLogicError(Exception):
-    """Raised when business rules are violated"""
-    pass
 
 def process_with_error_handling(data: Dict[str, Any]) -> ProcessingResult:
     """
-    Standard error handling template for all processing functions
-    
-    Returns structured result object instead of raising exceptions
-    to caller, allowing graceful error handling in UI layer
+    Template for functions that should not raise to the UI layer.
+
+    Args:
+        data: Input data to process
+
+    Returns:
+        ProcessingResult with structured status and error info
     """
     try:
-        # Validate input
         if not data:
-            return ProcessingResult(
-                status="error",
-                message="Input data is empty",
-                errors=["NO_DATA"]
-            )
-        
-        # Business logic
+            return ProcessingResult(status="error", message="No data", errors=["NO_DATA"])
         result = perform_business_logic(data)
-        logger.info(f"Successfully processed {len(data)} records")
-        
         return ProcessingResult(status="success", data=result)
-        
     except ValidationError as e:
         logger.error(f"Validation failed: {e}")
-        return ProcessingResult(
-            status="error",
-            message="Data validation failed",
-            errors=[str(e)]
-        )
-        
+        return ProcessingResult(status="error", message="Validation failed", errors=[str(e)])
     except DatabaseError as e:
-        logger.error(f"Database error: {e}", exc_info=True)
-        return ProcessingResult(
-            status="error",
-            message="Database operation failed",
-            errors=["DB_CONNECTION_FAILED"]
-        )
-        
-    except BusinessLogicError as e:
-        logger.warning(f"Business rule violation: {e}")
-        return ProcessingResult(
-            status="warning",
-            message=str(e),
-            errors=["BUSINESS_RULE_VIOLATION"]
-        )
+        logger.error(f"DB error: {e}", exc_info=True)
+        return ProcessingResult(status="error", message="DB operation failed", errors=["DB_ERROR"])
 ```
 
-**Key Principles**:
-- Return result objects, don't raise to UI layer
-- Log with appropriate level (ERROR for technical, WARNING for business)
-- Include `exc_info=True` for ERROR level to capture stack traces
-- Never log sensitive data (passwords, API keys, PII)
+**Principles**: Return result objects (don't raise to UI). Log ERROR for technical failures (with `exc_info=True`), WARNING for business rule violations. Never log credentials or PII.
 
 ---
 
-## **Deployment Patterns**
+## Architecture Anti-Patterns
 
-### **Standard Dockerfile**
+1. **Business logic in UI**: Keep SQL, validation, and processing in `core/` or dedicated modules
+2. **Circular imports**: Business logic must never import from UI modules
+3. **God classes**: Break 30-method classes into focused components (Validator, Repository, Service)
+4. **Deep nesting**: See "Flat Call Structures" above
+
+---
+
+## Deployment
+
+### Dockerfile (Standard)
 ```dockerfile
 FROM python:3.11-slim
-
 WORKDIR /app
 
-# Install system dependencies for Snowflake/ODBC
 RUN apt-get update && apt-get install -y \
-    gcc \
-    unixodbc-dev \
+    gcc unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
 COPY . .
 
-# Environment setup
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Health check (customize endpoint)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "print('healthy')" || exit 1
 
 CMD ["python", "main.py"]
 ```
 
-**Note on Kubernetes**: While Chewy uses Kubernetes, deployment to K8s typically involves handoff to Data Engineering teams. Focus on Docker compatibility and include Kubernetes-friendly patterns (e.g., health checks, environment-based config) when they're low-cost to implement, but don't design specifically for Kubernetes unless explicitly required.
+**Runtime**: Chewy uses Colima (not Docker Desktop) as the local container runtime on macOS. Dockerfiles and docker-compose files are identical -- Colima runs the standard Docker Engine. Start Colima with: `colima start --vm-type vz --mount-type virtiofs` (macOS 13+) to avoid volume mount permission issues.
 
-### **Environment Configuration**
+**Kubernetes**: K8s deployment is handled by Data Engineering. Include K8s-friendly patterns (health checks, env-based config) when low-cost, but don't design for K8s unless explicitly required.
+
+### Environment Configuration
 ```bash
 # Development
 DB_DATABASE=EDLDB
 DB_SCHEMA=SC_SANDBOX
-DB_WAREHOUSE=CHEWY_ANALYST_WH_SMALL
+DB_WAREHOUSE=<YOUR_DEV_WAREHOUSE>    # e.g. SC_AUTOSHIP_WH, STREAMLIT_XS_WH
+DB_ROLE=<YOUR_ASSIGNED_ROLE>         # e.g. SC_AUTOSHIP_USER
 LOG_LEVEL=DEBUG
 ENVIRONMENT=development
 
 # Production
 DB_DATABASE=EDLDB
 DB_SCHEMA=SC_PRODUCTION
-DB_WAREHOUSE=CHEWY_ANALYST_WH
+DB_WAREHOUSE=<YOUR_PROD_WAREHOUSE>
+DB_ROLE=<YOUR_ASSIGNED_ROLE>
 LOG_LEVEL=INFO
 ENVIRONMENT=production
 ```
 
 ---
 
-## **Project-Specific Context**
+## Library Quick Reference
 
-### **Documentation Hierarchy: Root vs. Local**
-
-**Root-Level claude.md** (this file):
-- Documents **abstract patterns** and **general principles**
-- Provides **reusable templates** applicable across projects
-- Explains **WHY** patterns exist (rationale, trade-offs)
-- Examples use **generic class names** (DataManager, BusinessLogic)
-- **Purpose**: Teach patterns once, apply everywhere
-
-**Local-Level claude.md** (project subfolders):
-- Documents **concrete implementations** with actual class names
-- Provides **project-specific workflows** and business logic
-- Shows **HOW** this project implements root patterns
-- Examples use **actual project classes** (VendorBusinessLogic, DatabaseManager)
-- **Purpose**: Enable immediate work on this specific project
-
-**Workflow Documentation Strategy**:
-- **Root should**: Document abstract workflow patterns (data → business → transaction)
-- **Local should**: Document complete end-to-end workflows with actual code
-- **Timing**: Add workflow docs AFTER implementation, not before (extract patterns from working code)
-- **Relationship**: Local workflows should reference root patterns they implement
-
-### **When You Clone This Template:**
-1. **Fill Quick Reference Section** at the top with project specifics
-2. **Document Business Rules** that are non-obvious or critical
-3. **List Integration Points** with actual table names, API endpoints
-4. **Note Known Issues** or workarounds that save debugging time
-5. **Delete Irrelevant Sections** (e.g., Streamlit patterns if it's a CLI tool)
-6. **Defer Workflow Examples** until implementation exists (extract from working code)
-
-### **What to Add to Project-Specific claude.md:**
-- **Data Models**: Key tables, columns, relationships
-- **Business Rules**: Domain-specific logic, validation rules
-- **Integration Points**: External systems, APIs, file formats
-- **Known Issues**: Current bugs, technical debt, workarounds
-- **Performance Notes**: Bottlenecks, optimization done/needed
-- **Security Notes**: Access controls, sensitive data locations
-- **Deployment Notes**: Environment-specific configurations
-- **Workflow Examples**: Complete end-to-end workflows (after implementation)
-
-### **What NOT to Add:**
-- NOT: Extensive tutorials (link to external docs instead)
-- NOT: Complete API documentation (maintain separately)
-- NOT: Changelog (use git history)
-- NOT: Extensive troubleshooting guides (maintain wiki/docs)
-- NOT: Workflow examples before code exists (extract patterns empirically)
+| Need | Use | Notes |
+|------|-----|-------|
+| Snowflake (standalone) | `snowflake-connector-python` | Official connector |
+| Snowflake (SiS) | `snowflake-snowpark-python` | Via `get_active_session()` |
+| Data manipulation | `pandas` | Industry standard, Snowflake native support |
+| Validation | `pydantic` | Runtime validation with clear error messages |
+| API framework | `fastapi` | Async, auto-docs |
+| CLI framework | `click` or `argparse` | click for complex CLIs, argparse for simple |
+| Testing | `pytest` | Fixtures, parametrization |
 
 ---
 
-## **Learning Resources & References**
+## Document & Analysis Standards
 
-### **Chewy-Specific Resources**
-- Snowflake Access: [Internal Snowflake Portal]
-- OKTA Authentication: [Internal OKTA Docs]
-- Docker Registry: [Internal Registry URL]
+These standards apply when drafting planning documents, proposals, comparison analyses, vision docs, or any written deliverable intended for stakeholders. Chewy's culture derives strongly from Amazon; these patterns reflect that lineage.
 
-### **External Documentation**
-- **Snowflake**: https://docs.snowflake.com/
-- **Pandas**: https://pandas.pydata.org/docs/
-- **FastAPI**: https://fastapi.tiangolo.com/
-- **Streamlit**: https://docs.streamlit.io/
-- **Pydantic**: https://docs.pydantic.dev/
+### Writing Principles
 
-### **Code Examples in This Repo**
-- Database patterns: `snippet_snowflake_connector.py`, `snippet_vertica_connector.py`
-- Vendor management: `cpfr_vmgr_slt/` (Streamlit + business logic)
-- Batch processing: `cpfr-vfcst-mgr2/` (bulk upload patterns)
-- Testing patterns: `SCOPT-vendor-email-bulk-uploader/tests/`
+1. **Work backwards**: Start from the customer or stakeholder outcome, then describe how to get there. Never lead with the solution.
+2. **The "so what" test**: Every section must answer "why does this matter" within its first two sentences. If it doesn't, rewrite the opening.
+3. **Narrative-first, data-second**: Open with plain-language explanation of the problem or opportunity. Data, tables, and metrics support the narrative -- they don't replace it.
+4. **Direct voice**: State positions clearly. "We need X" not "It might be beneficial to consider X." Passive hedging undermines the document's purpose.
+5. **Mechanisms over heroics**: Propose repeatable processes, not one-time efforts. If a solution depends on a single person's sustained effort, it is not a solution.
+6. **Write to decide, not to inform**: Documents should drive decisions. Every document should have a clear ask or recommendation. If there is no decision to be made, reconsider whether the document is necessary.
+
+### Document Structure
+
+Use tiered depth so readers self-select their level of detail:
+
+```
+Executive Summary        (1 paragraph -- the whole story in brief)
+Current State            (where we are, what's working, what isn't)
+Problem / Opportunity    (the "why now")
+Proposed Actions         (what we will do, framed as Defect/Action/ETA)
+Long-Term Vision         (where this leads in 1-2 years)
+FAQ / Risks              (preempt objections; address them directly)
+Appendices               (supporting data, tables, detailed breakdowns)
+```
+
+**Deliverable framing** -- use the Defect/Action/ETA pattern:
+- **Defect**: What is the current gap or pain point?
+- **Action**: What will be done to address it?
+- **ETA**: When will it be delivered?
+
+**FAQ as persuasion**: FAQ sections are not afterthoughts. Use them to surface disagreements transparently, preempt objections, and propose resolutions. A strong FAQ answers "but what about..." before the reader asks.
+
+### Comparison & Alternatives Analysis
+
+When evaluating options, use structured comparison tables with consistent dimensions across all candidates. Dimensions should include at minimum:
+- Level of effort (build vs. sustain)
+- Advantages and risks
+- Data governance / extensibility
+- Dependencies on other teams
+
+The recommendation should be self-evident from the analysis. If the table doesn't make the answer obvious, the dimensions need refinement -- not more prose.
+
+### Tone & Conventions
+
+- Match the tone of existing documents in the repo when drafting in an established context
+- Use Chewy's terminology (IMPACT, ICC, ISM, etc.) when the audience expects it
+- Avoid jargon when writing for cross-functional audiences; define acronyms on first use
+- Confidentiality markings (e.g., "Chewy Confidential -- For Internal Use Only") should be applied to documents containing operational data or vendor-specific information
 
 ---
 
-**Template Version**: 2.1  
-**Last Updated**: [DATE]  
-**Maintainer**: [YOUR_NAME]  
-**Next Review**: [DATE]
+## Documentation Hierarchy
+
+**Root CLAUDE.md** (this file): Abstract patterns, general principles, "why" explanations.
+
+**Local CLAUDE.md** (project subdirectories): Concrete implementations, actual class names, project-specific workflows, business rules.
+
+**Timing**: Add workflow documentation *after* implementation -- extract patterns from working code, not before it exists.
+
+### Creating a Local CLAUDE.md
+1. Fill in the Quick Reference template with project specifics
+2. Document non-obvious business rules
+3. List actual table names, API endpoints, integration points
+4. Note known issues and workarounds
+5. Delete sections from the template that do not apply
+6. Add workflow examples only after the code works
 
 ---
 
-## **Changelog**
+## References
 
-### Version 2.1 (Current)
-- **Character Encoding**: Added explicit guidelines to avoid emojis/special characters in code
-- **Kubernetes Clarification**: Repositioned as future/handoff consideration, not primary deployment target
-- **Removed Emojis**: Replaced all emoji section markers with plain text for better interoperability
-- **Anti-Pattern Updates**: Changed emoji markers (checkmark/cross) to BAD/GOOD text labels
+### Chewy Resources
+- Snowflake: [Internal Portal]
+- OKTA Auth: [Internal Docs]
+- Container Registry: [Internal Registry]
 
-### Version 2.0
-- **Token Optimization**: Removed generic content, focused on high-value context
-- **Added**: Common pitfalls, decision frameworks, Chewy-specific patterns
-- **Added**: Quick Reference section for rapid orientation
-- **Added**: Test evaluation framework
-- **Removed**: Generic troubleshooting, boilerplate security content
-- **Streamlined**: Code examples to show patterns, not complete implementations
-
-### Version 1.0
-- Initial comprehensive template
-- Full coverage of all topics
+### External Docs
+- [Snowflake](https://docs.snowflake.com/) | [Pandas](https://pandas.pydata.org/docs/) | [FastAPI](https://fastapi.tiangolo.com/) | [Streamlit](https://docs.streamlit.io/) | [Pydantic](https://docs.pydantic.dev/) | [pytest](https://docs.pytest.org/)

@@ -1,0 +1,45 @@
+Meeting assets for CPH Docs—Draft Review are ready!
+
+Meeting summary
+
+Quick recap
+
+The meeting focused on reviewing and providing feedback on a roadmap document and PR FAQ for a project involving CPH engineering resources. Participants discussed confusion around project timelines, particularly regarding when CPH would become involved and the need for specific commitments before proceeding with resource allocation. Phanindher suggested restructuring the roadmap to focus on end-state vision rather than idealistic timelines, with separate sections addressing OP1 submission requirements and CPH assessment needs. The group agreed that the roadmap should remain high-level at this stage, with specific engineering effort estimates to be provided by Jeremy's team and CPH after requirements are clearly defined. Another review session was scheduled for Friday to incorporate the feedback received during this meeting.
+
+Next steps
+
+SEA1: Incorporate feedback and update the roadmap and PR FAQ documents before the Friday review session.
+Nathaniel: Level set with Jeremy regarding upcoming calls with CPH and Harish to help assess engineering lift and advise on requirements.
+Team (implied SEA1/Nathaniel/Phanindher): Provide detailed requirements to Jeremy and CPH team to enable level of effort estimation within the next month.
+Team (implied SEA1/Nathaniel/Phanindher): Clarify and document the specific engineering resource asks (number of engineers, estimated effort) for inclusion in the OP1 submission.
+Team (implied SEA1/Nathaniel/Phanindher): Define and document the end state vision and MVP/Phase 1/Phase 2 deliverables in the roadmap, including dependencies and required steps for CPH and Jeremy's team.
+Team (implied SEA1/Nathaniel/Phanindher): Schedule and conduct calls with CPH and Harish (with Jeremy present) to assess engineering lift and gather input for OP1.
+Summary
+
+Document Review Access Planning
+
+Phanindher and SEA1 discussed starting document catch-up work while waiting for Nathan Nelson. Phanindher requested Nathan to provide access for adding comments, indicating a collaborative document review was planned.
+
+Document Review Access Planning
+
+The team discussed access permissions for a document and confirmed that edit access had been granted. Nathaniel inquired about the main document being reviewed, and Phanindher suggested focusing on the roadmap and OP1, with plans to address the PR FAQ later. SEA1 clarified that this was an initial review session with another scheduled for Friday, before the documents would be reviewed by the larger team.
+
+Roadmap Confusion and CPH Requirements
+
+The team discussed confusion around the roadmap, particularly regarding Phase 1 activities and CPH's involvement. Phanindher mentioned adding comments to a PRFQ and noted that the roadmap was a rough draft resulting from merging two documents. Steven highlighted that many tasks listed for May and June assume having a confirmed CPH engineering contact, which is a critical requirement. Nathaniel acknowledged this point and suggested preparing for next year if this requirement isn't met.
+
+OP1 Project Roadmap Resource Concerns
+
+The team discussed concerns about the roadmap and resource allocation for an interim OP1 project requiring over $10 million in entitlements. Nathaniel emphasized the need for formal commitments from leadership before proceeding with resource-intensive work, as the project's approval in the 2027 OP1 is uncertain. SEA1 highlighted that the current planning assumes idealistic outcomes without addressing the stage gate requirements, prompting questions about how to structure the roadmap given the uncertainty of available resources.
+
+PR FAQ Expansion Roadmap Discussion
+
+The team discussed the need to expand the PR FAQ to include both chargebacks and CPFR integration, reflecting a broader vision for the project. They emphasized the importance of establishing a data layer as preparatory work, with Nelson evaluating engineering effort to accelerate the OP1 decision. The team agreed to create a roadmap that outlines dependencies with the CPH team, including a clear plan for submitting to OP1 and addressing entitlements. They decided against committing resources without CPH's commitment, instead focusing on getting the proposal in front of CPH for alignment with Erd and Steam.
+
+Product Roadmap and OP1 Structure
+
+The team discussed the structure of the roadmap and OP1 deliverables, with Phanindher emphasizing the need to separate the product roadmap from engineering resource estimates. They agreed that the roadmap should focus on the end product requirements without specific timelines, while OP1 would include detailed engineering assessments and ROI calculations. Nathaniel and SEA1 raised questions about the need for in-depth planning conversations with Jeremy, but Phanindher clarified that such discussions were not immediately necessary for the roadmap's development.
+
+Spark Implementation Requirements Discussion
+
+The team discussed requirements for Jeremy's team regarding Spark implementation, focusing on container operations and data connections with the CPH team. Nathaniel explained that Jeremy needs to participate in calls with the CPH team to assess engineering lift and serve as an interim TPN. Phanindher suggested providing requirements to Jeremy and the CPH team for effort assessment, noting that this should be completed within a month. The team agreed to keep the roadmap high-level initially, with plans to refine it once Jeremy provides specific changes needed. They scheduled a follow-up meeting for Friday to review progress and clarify the roadmap's timing.

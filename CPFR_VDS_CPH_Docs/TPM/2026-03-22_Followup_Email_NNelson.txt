@@ -1,0 +1,17 @@
+Hi Nathan/Team,
+ 
+In addition to the callouts below, I want to align on next steps as we are about to have crossover with my conversations with Harish/CPH and the conversations CPFR is having with CPH. At the current point, there are 2 main workstreams happening overall:
+1.) Replenishment Engineering (Jeremy W) and CPH readiness
+2.) Securing the necessary CPH engineering resource(s) to execute the build
+ 
+For Replenishment Engineering:
+Jeremy needs to know where the data is stored to be shared via CPH to understand the data pipelines and data integrity considerations
+Jeremy needs the proposed UX designs to review and ask questions
+ 
+For CPH Engineering:
+Our #1 goal is to understand if a mid-year OP1 adjustment can happen (e.g., either shift priorities or get a net new hire(s)) or if this is a 2027 initiative. To secure this alignment, here is my plan:
+Meet with Nathan Miles and Phaninder to get their MVP of what CPH should be
+Combine CPFR and VC MVP into a single doc that allows Harish/team to assess the total lift, advise how many engineers this would take, and outline associated timelines based on headcount
+Once confirmed, I will write an OP1 paper for Senior Directors to decide
+ 
+Open to changes. Talk tomorrow.

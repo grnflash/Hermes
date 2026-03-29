@@ -39,27 +39,39 @@ class DatabaseManager:
             self.session = get_active_session()
             if not self.session:
                 raise ConnectionError("No active Snowflake session found. This app must run in Streamlit in Snowflake.")
-            
-            # Set session timeout to prevent long-running queries
+
+            # Set session timeout to prevent long-running queries.
+            # STATEMENT_TIMEOUT_IN_SECONDS is a session-level parameter; it applies to
+            # every query on every screen for the lifetime of the session.
             try:
                 self.session.sql("ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = 30").collect()
                 logger.info("Session timeout set to 30 seconds")
             except Exception as e:
                 logger.warning(f"Could not set session timeout: {e}")
-            
-            # Verify session works - removed test query to reduce unnecessary queries
-            # Connection will fail naturally if invalid when first used
-            # test_result = self.session.sql("SELECT 1 as test").collect()
-            # if not test_result:
-            #     raise ConnectionError("Session test query failed")
-            
+
+            # Set query tag for Snowflake cost attribution and performance monitoring.
+            # Required by Chewy DBS guidelines: owner and app_name are mandatory;
+            # file_path is required for Python apps; comment is optional but useful.
+            # Set once here so every query this session runs carries the tag automatically.
+            try:
+                query_tag = json.dumps({
+                    "owner":     "nmiles1",
+                    "app_name":  "VC_CPFR_EMAIL_STREAMLIT",
+                    "file_path": "cpfr-vc-mgrmicro/streamlit_app.py",
+                    "comment":   "CPFR Vendor Contact Manager - manages VC_CPFR_VENDOR_EMAIL",
+                })
+                self.session.sql(f"ALTER SESSION SET query_tag='{query_tag}'").collect()
+                logger.info("Session query tag set")
+            except Exception as e:
+                logger.warning(f"Could not set query tag: {e}")
+
             # Try to use dedicated warehouse for Streamlit apps
             try:
                 self.session.sql("USE WAREHOUSE STREAMLIT_XS_WH").collect()
                 logger.info("Using STREAMLIT_XS_WH warehouse")
             except Exception as e:
                 logger.info(f"Using default warehouse (STREAMLIT_XS_WH not available): {e}")
-            
+
             logger.info("Successfully initialized Snowpark session")
         except ImportError:
             raise ImportError("Snowflake Snowpark not available")

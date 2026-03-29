@@ -2,8 +2,10 @@
 CPFR Vendor Contact Streamlit Manager - For Streamlit in Snowflake
 
 Main Streamlit application for managing vendor contact information.
-One row per (Vendor Number, FILE); no Tier2+6Months dual-entry logic.
-Duplicate rows for the same vendor are shown with labels; cleanup is handled in the database.
+Provides user-friendly interface for non-SQL users to search, edit, and create vendor records.
+
+This version is optimized for Streamlit in Snowflake (under Projects),
+using st.connection() for database access and simplifying permission handling.
 """
 
 import streamlit as st
@@ -17,20 +19,6 @@ from vendor_processor import VendorProcessor, VendorSearchResult
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Field name mapping: database field names -> display labels
-FIELD_DISPLAY_NAMES = {
-    'Parent Vendor': 'Parent Company',
-    'CM_Email': 'Category Manager Email',
-    'CM Manager_Email': 'Category Merch AD Email',
-    'SP_Email': 'In-Stock Manager Email',
-    'SP Manager_Email': 'In-Stock AD Email',
-    'OVERRIDE_EMAIL': 'Override Email'
-}
-
-def get_field_display_name(field_name: str) -> str:
-    """Get display name for a field, or return original if no mapping exists"""
-    return FIELD_DISPLAY_NAMES.get(field_name, field_name)
 
 # CRITICAL: Check for reset flag FIRST, before any other initialization
 # This allows us to force a complete reset by setting this flag
@@ -79,7 +67,13 @@ if 'search_type' not in st.session_state:
 if 'search_value' not in st.session_state:
     st.session_state.search_value = ''
 
-# UI state for tracking file changes across form submit -> confirm flow
+# UI state machine for tier changes
+if 'tier_change_state' not in st.session_state:
+    st.session_state.tier_change_state = None  # None, 'warning', 'confirmation', 'receipt'
+
+if 'tier_change_warning' not in st.session_state:
+    st.session_state.tier_change_warning = None  # Stores warning message
+
 if 'tier_change_receipt' not in st.session_state:
     st.session_state.tier_change_receipt = None  # Stores receipt data
 
@@ -95,6 +89,62 @@ if 'original_vendor' not in st.session_state:
 
 if 'file_changing' not in st.session_state:
     st.session_state.file_changing = False
+
+def validate_session_state():
+    """
+    Validate and reset inconsistent session state.
+    This prevents the app from hanging due to corrupted state from abandoned sessions.
+    """
+    # Reset if we have pending changes but no original vendor (inconsistent state)
+    if st.session_state.pending_changes and not st.session_state.original_vendor:
+        logger.warning("Detected inconsistent state: pending_changes without original_vendor. Resetting.")
+        st.session_state.pending_changes = None
+        st.session_state.file_changing = False
+    
+    # Reset tier change state if inconsistent
+    if st.session_state.tier_change_state == 'warning' and not st.session_state.tier_change_warning:
+        logger.warning("Detected inconsistent state: tier_change_state='warning' without tier_change_warning. Resetting.")
+        st.session_state.tier_change_state = None
+    
+    # Reset if we're in receipt mode but no receipt data
+    if st.session_state.current_mode == 'receipt' and not st.session_state.tier_change_receipt:
+        logger.warning("Detected inconsistent state: receipt mode without receipt data. Resetting to search.")
+        st.session_state.current_mode = 'search'
+    
+    # Reset if we're in edit mode but no selected vendor
+    if st.session_state.current_mode == 'edit' and not st.session_state.selected_vendor:
+        logger.warning("Detected inconsistent state: edit mode without selected vendor. Resetting to search.")
+        st.session_state.current_mode = 'search'
+
+
+def refresh_search_results(show_warning: bool = False):
+    """
+    Re-run the most recent search so cached results stay in sync with the database.
+    Also clears the search cache to ensure fresh data on subsequent searches.
+    """
+    # Clear the search cache to prevent stale data
+    cached_search.clear()
+    
+    if not st.session_state.get('search_performed'):
+        return
+
+    search_type = st.session_state.get('search_type')
+    search_value = st.session_state.get('search_value')
+
+    if not search_type or not search_value:
+        st.session_state.search_results = None
+        st.session_state.search_performed = False
+        return
+
+    try:
+        df = st.session_state.db_manager.search_vendors(search_type, search_value)
+        refreshed = st.session_state.vendor_processor.process_search_results(df)
+        st.session_state.search_results = refreshed
+        st.session_state.search_performed = True
+    except Exception as e:
+        if show_warning:
+            st.warning("Unable to refresh search results automatically.")
+        logger.error(f"Failed to refresh search results: {e}")
 
 def main():
     """Main application entry point"""
@@ -153,36 +203,30 @@ def show_search_screen():
     st.header("🔍 Search Vendors")
     
     # Quick start guidance
-    st.info("""💡 **NOTE:**
-
-- Vendors are tracked by Vendor Number, or you may also search by Vendor Name/Parent/Company.
-- If no result is found for a Vendor Number, you can create a new entry.
-- Tier 1 vendors should be searched by Parent Company""")
+    st.info("💡 **Quick Start**: Vendors are tracked by Vendor Number, or you may also search by Vendor Name/Parent/Company. If no result is found for a Vendor Number, you can create a new entry.")
     
     # Search type selection - 50/50 split (expander appears auxiliary due to inherent visual differences)
     col1, col2 = st.columns([1, 1])
     with col1:
-        search_type_display = st.selectbox(
+        search_type = st.selectbox(
             "",
-            ["Vendor Number", "Vendor Name", "Parent Company", "Vendor Contacts"],
+            ["Vendor Number", "Vendor Name", "Parent Vendor", "Vendor Contacts"],
             key="search_type_input",
             label_visibility="collapsed"
         )
-        # Map display name back to database field name
-        search_type = "Parent Vendor" if search_type_display == "Parent Company" else search_type_display
     with col2:
         # Top-align expander now that label is removed - styled to look auxiliary like info box
         with st.expander("ℹ️ About Search Types", expanded=False):
             st.markdown("""
             - **Vendor Number**: Exact match required
             - **Vendor Name**: Partial match (case-insensitive)
-            - **Parent Company**: Partial match
+            - **Parent Vendor**: Partial match
             - **Vendor Contacts**: Partial match (searches email addresses)
             """)
     
     # Search input
     search_value = st.text_input(
-        f"Enter {search_type_display.lower()}:",
+        f"Enter {search_type.lower()}:",
         help="Enter partial text for name/company searches, exact number for vendor number",
         key="search_value_input"
     )
@@ -216,29 +260,16 @@ def show_search_screen():
                 st.info("💡 Click 'Search' to check if this vendor already exists")
     
 
-def _get_streamlit_session_id() -> str:
-    """
-    Retrieve the current Streamlit session ID for audit logging.
-
-    Returns an empty string if the session context is unavailable,
-    ensuring this never raises in the audit call path.
-
-    Returns:
-        Streamlit session ID string, or '' if unavailable
-    """
-    try:
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-        ctx = get_script_run_ctx()
-        return ctx.session_id if ctx else ''
-    except Exception:
-        return ''
-
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def cached_search(search_type: str, search_value: str):
+    """Cached vendor search to reduce database hits"""
+    return st.session_state.db_manager.search_vendors(search_type, search_value)
 
 def perform_search(search_type: str, search_value: str):
     """Perform vendor search and transition to results screen"""
     try:
         with st.spinner("Searching vendors..."):
-            df = st.session_state.db_manager.search_vendors(search_type, search_value)
+            df = cached_search(search_type, search_value)
             search_result = st.session_state.vendor_processor.process_search_results(df)
         
         # Mark that a search has been performed
@@ -274,9 +305,7 @@ def show_results_screen():
         return
     
     st.header(f"📋 Search Results ({len(search_result.vendors)} found)")
-    # Map database field name to display name for search type
-    search_type_display = "Parent Company" if st.session_state.search_type == "Parent Vendor" else st.session_state.search_type
-    st.write(f"Searching by: {search_type_display}")
+    st.write(f"Searching by: {st.session_state.search_type}")
     st.write(f"Search term: {st.session_state.search_value}")
     
     # Back to search button
@@ -285,33 +314,100 @@ def show_results_screen():
         st.session_state.search_results = None
         st.rerun()
     
-    if any(v.get('duplicate_label') for v in search_result.vendors):
-        st.caption("Rows marked (duplicate) are disfavored; rationalize duplicates in the database.")
-    # Single list view: all rows with duplicate labels where applicable
-    display_results_list(search_result)
+    # Dual entry explanation (shown before results if dual entries exist)
+    if search_result.has_dual_entries:
+        st.info("""
+        **Note:** Tier 2 vendors require a secondary 6Months or 3Months entry. Both are shown for inspection, but **editing either entry synchronizes both automatically.**
+        """)
+    
+    if search_result.has_dual_entries:
+        display_dual_entry_results(search_result)
+    else:
+        display_single_entry_results(search_result)
 
-def display_results_list(search_result: VendorSearchResult):
-    """Display all result rows in a single list; show duplicate label on subordinate rows."""
+def display_dual_entry_results(search_result: VendorSearchResult):
+    """Display results with Tier2+6Months dual entries"""
+    
+    # Group by vendor number
+    vendor_groups = {}
+    for vendor in search_result.vendors:
+        vendor_number = vendor['Vendor Number']
+        if vendor_number not in vendor_groups:
+            vendor_groups[vendor_number] = []
+        vendor_groups[vendor_number].append(vendor)
+    
+    for vendor_number, vendor_list in vendor_groups.items():
+        with st.expander(f"Vendor {vendor_number} - {vendor_list[0].get('Vendor Name', 'Unknown')}", expanded=True):
+            # Check if this is a Tier2+6Months combination
+            file_values = [v['FILE'] for v in vendor_list]
+            
+            if 'Tier2' in file_values and '6Months' in file_values:
+                st.info("🔗 This vendor has Tier2+6Months dual entries")
+                
+                # Display both entries side by side
+                col1, col2 = st.columns(2)
+                
+                tier2_vendor = next(v for v in vendor_list if v['FILE'] == 'Tier2')
+                sixmonths_vendor = next(v for v in vendor_list if v['FILE'] == '6Months')
+                
+                with col1:
+                    st.markdown("**Tier2 Entry**")
+                    if st.button(f"Edit Tier2 Entry", key=f"edit_tier2_{vendor_number}"):
+                        # Fetch fresh data for the selected entry
+                        try:
+                            fresh_tier2 = st.session_state.db_manager.get_vendor(vendor_number, 'Tier2')
+                            st.session_state.selected_vendor = fresh_tier2 if fresh_tier2 else tier2_vendor
+                        except:
+                            st.session_state.selected_vendor = tier2_vendor
+                        st.session_state.current_mode = 'edit'
+                        st.rerun()
+                
+                with col2:
+                    st.markdown("**6Months Entry**")
+                    if st.button(f"Edit 6Months Entry", key=f"edit_6months_{vendor_number}"):
+                        # Fetch fresh data for the selected entry
+                        try:
+                            fresh_6months = st.session_state.db_manager.get_vendor(vendor_number, '6Months')
+                            st.session_state.selected_vendor = fresh_6months if fresh_6months else sixmonths_vendor
+                        except:
+                            st.session_state.selected_vendor = sixmonths_vendor
+                        st.session_state.current_mode = 'edit'
+                        st.rerun()
+            else:
+                # Single entry
+                for i, vendor in enumerate(vendor_list):
+                    st.markdown(f"**{vendor['FILE']} Entry**")
+                    if st.button(f"Edit {vendor['FILE']} Entry", key=f"edit_{vendor_number}_{i}"):
+                        # Fetch fresh data for the selected entry
+                        try:
+                            fresh_vendor = st.session_state.db_manager.get_vendor(vendor_number, vendor['FILE'])
+                            st.session_state.selected_vendor = fresh_vendor if fresh_vendor else vendor
+                        except:
+                            st.session_state.selected_vendor = vendor
+                        st.session_state.current_mode = 'edit'
+                        st.rerun()
+
+def display_single_entry_results(search_result: VendorSearchResult):
+    """Display single entry search results"""
     st.subheader("📋 Search Results")
     
     for i, vendor in enumerate(search_result.vendors):
         vendor_number = vendor['Vendor Number']
         vendor_name = vendor.get('Vendor Name', 'Unknown')
         file_value = vendor.get('FILE', 'Unknown')
-        dup_label = vendor.get('duplicate_label') or ''
-        display_file = f"{file_value} {dup_label}".strip()
         
         col1, col2 = st.columns([3, 1])
         
         with col1:
-            st.write(f"**{vendor_number}** - {vendor_name} ({display_file})")
+            st.write(f"**{vendor_number}** - {vendor_name} ({file_value})")
         
         with col2:
             if st.button(f"Edit", key=f"edit_{i}"):
+                # Fetch fresh data for the selected entry
                 try:
-                    fresh_vendor = st.session_state.db_manager.get_vendor(vendor_number, vendor['FILE'])
+                    fresh_vendor = st.session_state.db_manager.get_vendor(vendor['Vendor Number'], vendor['FILE'])
                     st.session_state.selected_vendor = fresh_vendor if fresh_vendor else vendor
-                except Exception:
+                except:
                     st.session_state.selected_vendor = vendor
                 st.session_state.current_mode = 'edit'
                 st.rerun()
@@ -322,8 +418,6 @@ def show_edit_screen():
     
     if not vendor:
         st.error("No vendor selected for editing")
-        st.session_state.pending_changes = None
-        st.session_state.original_vendor = None
         st.session_state.current_mode = 'search'
         st.rerun()
         return
@@ -331,54 +425,99 @@ def show_edit_screen():
     file_value = vendor.get('FILE', 'Unknown')
     st.header(f"✏️ Edit Vendor: {vendor.get('Vendor Number', 'Unknown')} ({file_value})")
     
+    # Check for dual entry mismatches
+    if file_value in ['Tier2', '6Months']:
+        try:
+            # Get both entries to check for mismatches
+            vendor_combinations = st.session_state.db_manager.get_vendor_combinations(vendor.get('Vendor Number', ''))
+            tier2_entry = next((v for v in vendor_combinations if v.get('FILE') == 'Tier2'), None)
+            sixmonths_entry = next((v for v in vendor_combinations if v.get('FILE') == '6Months'), None)
+            
+            if tier2_entry and sixmonths_entry:
+                # Dual entry context at top of edit form
+                st.info("""
+                **🔄 Dual Entry**: This vendor has both Tier2 and 6Months entries. 
+                Changes you make here will automatically sync to the other entry.
+                """)
+                
+                # Check for mismatches (excluding FILE field and deprecated fields)
+                editable_fields = st.session_state.vendor_processor.get_editable_fields()
+                mismatches = []
+                for field in editable_fields:
+                    tier2_value = tier2_entry.get(field)
+                    sixmonths_value = sixmonths_entry.get(field)
+                    if str(tier2_value or '') != str(sixmonths_value or ''):
+                        mismatches.append(field)
+                
+                if mismatches:
+                    st.warning(f"⚠️ **Dual Entry Mismatch Detected!** The Tier2 and 6Months entries have different values for: {', '.join(mismatches)}. Updating this entry will synchronize both entries with the same values.")
+        except Exception as e:
+            logger.warning(f"Could not check for dual entry mismatches: {e}")
+    
     # Edit form
     with st.form("vendor_edit_form"):
         st.subheader("Vendor Information")
-
-        # Field guidance
-        override_email_label = get_field_display_name('OVERRIDE_EMAIL')
-        st.info(f"""💡 **NOTE:**
-
-- Only **Vendor Contacts** will receive CPFR emails
-- If **{override_email_label}** is populated, *only* those recipients will receive reports and receipt by **Vendor Contacts** will be temporarily halted.
-- To restore receipt by recipients in **Vendor Contacts**, ensure that **{override_email_label}** is empty.
-""")
         
         # FILE field - editable with special handling
-        current_file = vendor.get('FILE', 'None')
+        current_file = vendor.get('FILE', 'Unknown')
         
-        # Normalize current_file: convert None/NaN to 'None', '3Months' to '6Months'
-        if current_file is None or (isinstance(current_file, float) and pd.isna(current_file)):
-            current_file = 'None'
-        elif current_file == '3Months':
-            current_file = '6Months'
+        # Determine available FILE options - show all 4 for visibility, but restrict Tier1
+        file_options = ["Tier1", "Tier2", "6Months", "3Months"]
         
-        # FILE options - ordered: 6Months -> Tier2 -> Tier1 -> None (single row per entry)
-        file_options = ["6Months", "Tier2", "Tier1", "None"]
+        # Check if we're editing a 6Months entry that's tied to a Tier2 entry
+        disable_tier2 = False
+        if current_file == '6Months':
+            try:
+                vendor_combinations = st.session_state.db_manager.get_vendor_combinations(vendor.get('Vendor Number', ''))
+                tier2_entry = next((v for v in vendor_combinations if v.get('FILE') == 'Tier2'), None)
+                if tier2_entry:
+                    disable_tier2 = True
+            except Exception as e:
+                logger.warning(f"Could not check for Tier2 entry: {e}")
+        
+        # Create FILE selectbox - show all options for visibility
         col1, col2 = st.columns([2, 3])
         with col1:
-            if current_file in file_options:
-                file_index = file_options.index(current_file)
-            else:
-                file_index = 0
-                logger.warning(f"Unrecognized FILE value '{current_file}', defaulting to '6Months'")
-            
+            file_index = file_options.index(current_file) if current_file in file_options else 0
             updated_file = st.selectbox(
                 "FILE",
                 file_options,
                 index=file_index,
-                help="Tier1 changes require CPFR team authorization. Select 6Months, Tier2, Tier1, or None.",
+                help="Tier1 changes require CPFR team authorization. Select Tier2, 6Months, or 3Months.",
                 key="edit_file_field"
             )
         
-        # Tier1 authorization note
-        tier1_error = updated_file == "Tier1" and current_file != "Tier1"
+        # Tier change guidance after FILE field selection
+        if updated_file != current_file:
+            if updated_file == 'Tier2':
+                st.info("""
+                **Tier2 Note**: Changing to Tier2 will create both Tier2 and 6Months entries with identical data.
+                """)
+            elif current_file in ['Tier2', '6Months'] and updated_file not in ['Tier2', '6Months']:
+                st.warning("""
+                **Tier Change**: Moving away from Tier2/6Months will merge dual entries into a single entry.
+                """)
+        
+        # Check if Tier1 was selected (and it's not the current value)
+        tier1_error = None
+        if updated_file == "Tier1" and current_file != "Tier1":
+            tier1_error = True
+            # Note: We can't reset the selectbox value directly, but we'll block submission
+            # The selectbox will show Tier1, but the error message will appear and submission will be blocked
+        
+        # Show error message if Tier1 was attempted
         with col2:
             if tier1_error:
                 st.error("⚠️ **Tier1 changes require CPFR team authorization.**")
                 st.markdown(f"Please contact the CPFR team: [nmiles1@chewy.com](mailto:nmiles1@chewy.com)")
             elif updated_file == "Tier1":
+                # Current value is Tier1 - show info message
                 st.info("ℹ️ Current value is Tier1. Changes to Tier1 require CPFR team authorization.")
+        
+        # Handle 6Months tied to Tier2 restriction
+        if disable_tier2 and updated_file == 'Tier2':
+            updated_file = current_file  # Prevent change
+            st.warning("⚠️ Cannot change 6Months entry to Tier2 when a Tier2 entry already exists for this vendor.")
         
         updated_data = {"FILE": updated_file}
         
@@ -392,31 +531,17 @@ def show_edit_screen():
             # Handle NULL values for display
             display_value = str(current_value).strip() if current_value and str(current_value).strip() else ''
             
-            # Get display name for field label
-            field_label = get_field_display_name(field)
-            
-            if field == 'Vendor Contacts':
-                # Vendor Contacts uses text_area
+            if field in ['Vendor Contacts', 'CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email', 'OVERRIDE_EMAIL']:
+                # Email fields with validation - built-context pattern
+                is_first_email_field = (field == 'Vendor Contacts')
                 updated_data[field] = st.text_area(
-                    field_label,
+                    field,
                     value=display_value,
                     help="Enter semicolon-separated email addresses (leave empty for NULL)"
                 )
-                st.caption("💡 **Format**: `email1@example.com;email2@example.com;email3@example.com` (semicolon-separated). This format applies to all email fields below.")
-            elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
-                # These email fields use text_input (single line)
-                updated_data[field] = st.text_input(
-                    field_label,
-                    value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)"
-                )
-            elif field == 'OVERRIDE_EMAIL':
-                # OVERRIDE_EMAIL uses text_area
-                updated_data[field] = st.text_area(
-                    field_label,
-                    value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)"
-                )
+                # Full explanation for first email field - applies to all email fields
+                if is_first_email_field:
+                    st.caption("💡 **Format**: `email1@example.com;email2@example.com;email3@example.com` (semicolon-separated). This format applies to all email fields below.")
             elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
                 # Date fields with NULL option
                 current_date = None
@@ -432,12 +557,12 @@ def show_edit_screen():
                 
                 # Checkbox to enable/disable date
                 st.caption("💡 Use the checkbox to enable/disable the date. Uncheck to set to NULL.")
-                enable_date = st.checkbox(f"Set {field_label}", value=has_date, key=f"edit_enable_{field}")
+                enable_date = st.checkbox(f"Set {field}", value=has_date, key=f"edit_enable_{field}")
                 
                 if enable_date:
                     st.caption("💡 Date will be saved when you submit the form.")
                     date_value = st.date_input(
-                        field_label,
+                        field,
                         value=current_date,
                         help="Select effective date",
                         key=f"edit_date_{field}"
@@ -445,13 +570,13 @@ def show_edit_screen():
                     updated_data[field] = date_value.strftime('%Y-%m-%d') if date_value else None
                 else:
                     updated_data[field] = None
-                    st.info(f"💡 {field_label} will be set to NULL")
+                    st.info(f"💡 {field} will be set to NULL")
             else:
                 # Regular text fields
                 updated_data[field] = st.text_input(
-                    field_label,
+                    field,
                     value=display_value,
-                    help=f"Enter {field_label.lower()} (leave empty for NULL)"
+                    help=f"Enter {field.lower()} (leave empty for NULL)"
                 )
         
         # Submit button
@@ -474,18 +599,34 @@ def show_edit_screen():
             st.session_state.selected_vendor = None
             st.rerun()
     
-    # Show confirmation button if there are pending changes
+    # Handle tier change warning state
+    if st.session_state.tier_change_state == 'warning':
+        show_tier_change_warning()
+        # Still show the back button even during warning state
+        st.markdown("---")
+        st.markdown("**Navigation:**")
+        if st.button("← Back to Search", key="back_to_search_bottom_warning", help="Return to the search screen"):
+            # If we have search results, go back to results screen; otherwise go to search screen
+            if st.session_state.search_results:
+                st.session_state.current_mode = 'results'
+            else:
+                st.session_state.current_mode = 'search'
+                st.session_state.search_results = None
+            st.session_state.selected_vendor = None
+            st.session_state.tier_change_state = None
+            st.session_state.tier_change_warning = None
+            st.session_state.pending_changes = None
+            st.rerun()
+        return
+    
+    # Show confirmation button if there are pending changes (non-tier changes)
     if st.session_state.pending_changes:
         st.markdown("---")
         col1, col2 = st.columns([1, 1])
         
         with col1:
             if st.button("✅ Confirm Changes", type="primary"):
-                # st.rerun() lives here, NOT inside confirm_vendor_changes(), so
-                # Streamlit's internal RerunException is never swallowed by that
-                # function's except block.
-                if confirm_vendor_changes():
-                    st.rerun()
+                confirm_vendor_changes()
         
         with col2:
             if st.button("❌ Cancel Changes"):
@@ -497,17 +638,9 @@ def show_edit_screen():
 def save_vendor_changes(original_vendor: Dict[str, Any], updated_data: Dict[str, Any]):
     """Save vendor changes to database"""
     try:
-        # Normalize FILE values for comparison: convert None/NaN to 'None', '3Months' to '6Months'
-        original_file = original_vendor.get('FILE', 'None')
-        if original_file is None or (isinstance(original_file, float) and pd.isna(original_file)):
-            original_file = 'None'
-        elif original_file == '3Months':
-            original_file = '6Months'
-        
+        # Validate FILE field - prevent Tier1 changes
+        original_file = original_vendor.get('FILE', '')
         new_file = updated_data.get('FILE', original_file)
-        # Normalize new_file for comparison
-        if new_file == '3Months':
-            new_file = '6Months'
         
         # Block Tier1 selection (unless it's already Tier1)
         if new_file == "Tier1" and original_file != "Tier1":
@@ -529,6 +662,8 @@ def save_vendor_changes(original_vendor: Dict[str, Any], updated_data: Dict[str,
         
         # Calculate changes (including FILE if it changed)
         changes = st.session_state.vendor_processor.calculate_changes(original_vendor, updated_data)
+        
+        # If FILE is changing, add it to changes explicitly
         if file_changing and 'FILE' not in changes:
             changes['FILE'] = new_file
         
@@ -536,12 +671,57 @@ def save_vendor_changes(original_vendor: Dict[str, Any], updated_data: Dict[str,
             st.info("ℹ️ No changes detected")
             return
         
+        # Handle tier changes with state machine
+        if file_changing:
+            # Check what kind of tier change this is
+            warning_message = None
+            if original_file in ['Tier2', '6Months'] and new_file not in ['Tier2', '6Months']:
+                # Moving FROM Tier2+6Months to another tier
+                try:
+                    vendor_combinations = st.session_state.db_manager.get_vendor_combinations(original_vendor.get('Vendor Number', ''))
+                    tier2_exists = any(v.get('FILE') == 'Tier2' for v in vendor_combinations)
+                    sixmonths_exists = any(v.get('FILE') == '6Months' for v in vendor_combinations)
+                    
+                    if tier2_exists and sixmonths_exists:
+                        warning_message = f"⚠️ **Tier Change Warning:** You are changing from a Tier2+6Months dual entry to a single {new_file} entry.\n\n**This will:**\n- Merge (synchronize) both Tier2 and 6Months entries\n- Combine them into a single {new_file} entry\n- **Remove the secondary entry**\n\nDo you want to continue?"
+                except Exception as e:
+                    logger.warning(f"Could not check for dual entries: {e}")
+            
+            elif original_file not in ['Tier2', '6Months'] and new_file == 'Tier2':
+                # Moving TO Tier2 from another tier
+                warning_message = f"⚠️ **Tier Change Warning:** You are changing from {original_file} to Tier2.\n\n**This will:**\n- Create both a Tier2 entry and a 6Months entry with identical data\n- **Remove the original {original_file} entry**\n\nDo you want to continue?"
+            
+            elif original_file in ['Tier2', '6Months'] and new_file in ['Tier2', '6Months'] and original_file != new_file:
+                # Changing WITHIN dual entry pair (Tier2 ↔ 6Months)
+                try:
+                    vendor_combinations = st.session_state.db_manager.get_vendor_combinations(original_vendor.get('Vendor Number', ''))
+                    tier2_exists = any(v.get('FILE') == 'Tier2' for v in vendor_combinations)
+                    sixmonths_exists = any(v.get('FILE') == '6Months' for v in vendor_combinations)
+                    
+                    if tier2_exists and sixmonths_exists:
+                        warning_message = f"⚠️ **Tier Change Warning:** You are changing from {original_file} to {new_file} within a Tier2+6Months dual entry.\n\n**This will:**\n- Merge (synchronize) both entries\n- Change this entry's FILE to {new_file}\n- **Remove the other entry** (you'll have a single {new_file} entry)\n\nDo you want to continue?"
+                    else:
+                        # Only one exists, simple change
+                        warning_message = f"⚠️ **Tier Change Warning:** You are changing from {original_file} to {new_file}.\n\n**This will:**\n- Change the FILE value from {original_file} to {new_file}\n\nDo you want to continue?"
+                except Exception as e:
+                    logger.warning(f"Could not check for dual entries: {e}")
+            
+            # If we have a warning, enter warning state
+            if warning_message:
+                st.session_state.tier_change_state = 'warning'
+                st.session_state.tier_change_warning = warning_message
+                st.session_state.pending_changes = changes
+                st.session_state.original_vendor = original_vendor
+                st.session_state.file_changing = file_changing
+                st.rerun()
+                return
+        
+        # Non-tier changes or tier changes without warnings - show normal summary
         # Show changes summary
         st.subheader("📝 Changes Summary")
         for field, new_value in changes.items():
             old_value = original_vendor.get(field, '')
-            field_label = get_field_display_name(field)
-            st.write(f"**{field_label}**:")
+            st.write(f"**{field}**:")
             st.write(f"  From: {old_value or '(empty)'}")
             st.write(f"  To: {new_value or '(empty)'}")
         
@@ -554,39 +734,60 @@ def save_vendor_changes(original_vendor: Dict[str, Any], updated_data: Dict[str,
         st.error(f"❌ Error saving changes: {str(e)}")
         logger.error(f"Save error: {e}")
 
-def confirm_vendor_changes() -> bool:
-    """
-    Confirm and save pending vendor changes.
+def show_tier_change_warning():
+    """Display tier change warning with Yes/No confirmation"""
+    warning_message = st.session_state.tier_change_warning
+    
+    st.warning(warning_message)
+    
+    # Show changes summary
+    if st.session_state.pending_changes:
+        st.subheader("📝 Changes Summary")
+        original_vendor = st.session_state.original_vendor
+        changes = st.session_state.pending_changes
+        
+        for field, new_value in changes.items():
+            old_value = original_vendor.get(field, '')
+            st.write(f"**{field}**:")
+            st.write(f"  From: {old_value or '(empty)'}")
+            st.write(f"  To: {new_value or '(empty)'}")
+    
+    # Yes/No buttons
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        if st.button("✅ Yes, Continue", type="primary"):
+            # Move to confirmation and execute
+            confirm_vendor_changes()
+    
+    with col2:
+        if st.button("❌ No, Cancel"):
+            # Clear warning state and return to edit
+            st.session_state.tier_change_state = None
+            st.session_state.tier_change_warning = None
+            st.session_state.pending_changes = None
+            st.session_state.original_vendor = None
+            st.rerun()
 
-    Returns:
-        True if the operation succeeded and the caller should trigger st.rerun();
-        False otherwise. st.rerun() is intentionally NOT called here so that
-        Streamlit's RerunException is never swallowed by this function's except block.
-    """
-    # Set fallback values so the outer except block can always reference these
-    vendor_number = ''
-    audit_action = 'UPDATE'
-    changes = {}
-    original_vendor = {}
-
+def confirm_vendor_changes():
+    """Confirm and save pending vendor changes"""
     try:
         changes = st.session_state.pending_changes
         original_vendor = st.session_state.original_vendor
         file_changing = st.session_state.get('file_changing', False)
-
+        
         # Update database
         vendor_number = original_vendor['Vendor Number']
         original_file = original_vendor['FILE']
         new_file = changes.get('FILE', original_file)
-        audit_action = 'TIER_CHANGE' if (file_changing and original_file != new_file) else 'UPDATE'
-
+        
         # Check if FILE is changing - if so, use tier change logic
         if file_changing and original_file != new_file:
             try:
                 success = st.session_state.db_manager.change_vendor_tier(
                     vendor_number, original_file, new_file, changes
                 )
-
+                
                 if not success:
                     st.error("❌ Failed to change tier. Please check the application logs for details.")
             except Exception as tier_error:
@@ -605,7 +806,7 @@ def confirm_vendor_changes() -> bool:
                 logger.error(f"Exception in update_vendor: {update_error}", exc_info=True)
                 st.error(f"❌ Error updating vendor: {str(update_error)}")
                 success = False
-
+        
         if success:
             # Fetch fresh data from database
             try:
@@ -621,18 +822,11 @@ def confirm_vendor_changes() -> bool:
                 fresh_vendor = original_vendor.copy()
                 fresh_vendor.update(changes)
                 logger.warning(f"Could not fetch fresh data: {e}")
-
-            # Write audit record for successful transaction
-            st.session_state.db_manager.write_audit_record(
-                action_type=audit_action,
-                status='SUCCESS',
-                vendor_number=vendor_number,
-                before_state=original_vendor,
-                after_state=fresh_vendor,
-                changed_fields=list(changes.keys()),
-                session_id=_get_streamlit_session_id(),
-            )
-
+            
+            # Clear search cache to ensure fresh data on subsequent searches
+            cached_search.clear()
+            refresh_search_results()
+            
             # Create receipt data
             receipt_data = {
                 'vendor_number': vendor_number,
@@ -643,50 +837,34 @@ def confirm_vendor_changes() -> bool:
                 'original_file': original_file,
                 'new_file': new_file if file_changing else original_file
             }
-
-            # Clear pending changes and move to receipt screen
+            
+            # Clear pending changes and warning state
             st.session_state.pending_changes = None
             st.session_state.original_vendor = None
-
+            st.session_state.tier_change_state = None
+            st.session_state.tier_change_warning = None
+            
             # Store receipt and move to receipt screen
             st.session_state.tier_change_receipt = receipt_data
             st.session_state.current_mode = 'receipt'
-            return True
+            st.rerun()
         else:
-            # Write audit record for failed transaction (DB returned False)
-            st.session_state.db_manager.write_audit_record(
-                action_type=audit_action,
-                status='ERROR',
-                vendor_number=vendor_number,
-                before_state=original_vendor,
-                after_state=None,
-                changed_fields=list(changes.keys()),
-                error_message='Database operation returned False; see application logs.',
-                session_id=_get_streamlit_session_id(),
-            )
             st.error("❌ Failed to save changes. Please try again.")
-            return False
-
+            # Clear warning state on failure
+            st.session_state.tier_change_state = None
+            st.session_state.tier_change_warning = None
+    
     except Exception as e:
         logger.error(f"Error in confirm_vendor_changes: {e}", exc_info=True)
-        # Write audit record for unexpected exception
-        st.session_state.db_manager.write_audit_record(
-            action_type=audit_action,
-            status='ERROR',
-            vendor_number=vendor_number,
-            before_state=original_vendor if original_vendor else None,
-            after_state=None,
-            changed_fields=list(changes.keys()) if changes else None,
-            error_message=str(e)[:5000],
-            session_id=_get_streamlit_session_id(),
-        )
         st.error(f"❌ Error confirming changes: {str(e)}")
-        return False
+        # Clear warning state on error
+        st.session_state.tier_change_state = None
+        st.session_state.tier_change_warning = None
 
 def show_receipt_screen():
     """Display persistent receipt screen showing what was changed"""
     receipt = st.session_state.tier_change_receipt
-
+    
     if not receipt:
         st.error("No receipt data available")
         st.session_state.current_mode = 'search'
@@ -716,10 +894,9 @@ def show_receipt_screen():
             if field == 'FILE':
                 continue  # Already shown above
             old_value = original_vendor.get(field, '')
-            field_label = get_field_display_name(field)
             col1, col2 = st.columns([1, 2])
             with col1:
-                st.write(f"**{field_label}:**")
+                st.write(f"**{field}:**")
             with col2:
                 st.write(f"{old_value or '(empty)'} → {new_value or '(empty)'}")
     
@@ -734,22 +911,40 @@ def show_receipt_screen():
         st.write(f"**Vendor Number:** {updated_vendor.get('Vendor Number', 'N/A')}")
         st.write(f"**FILE:** {updated_vendor.get('FILE', 'N/A')}")
         st.write(f"**Vendor Name:** {updated_vendor.get('Vendor Name', 'N/A')}")
+        st.write(f"**PURCHASER:** {updated_vendor.get('PURCHASER', 'N/A')}")
+        st.write(f"**Shipment Method Code:** {updated_vendor.get('Shipment Method Code', 'N/A')}")
         st.write(f"**Vendor Contacts:** {updated_vendor.get('Vendor Contacts', 'N/A')}")
-        st.write(f"**{get_field_display_name('Parent Vendor')}:** {updated_vendor.get('Parent Vendor', 'N/A')}")
+        st.write(f"**Parent Vendor:** {updated_vendor.get('Parent Vendor', 'N/A')}")
+        st.write(f"**CB Rollout Phase:** {updated_vendor.get('CB Rollout Phase', 'N/A')}")
     
     with col2:
-        st.write(f"**{get_field_display_name('CM_Email')}:** {updated_vendor.get('CM_Email', 'N/A')}")
-        st.write(f"**{get_field_display_name('CM Manager_Email')}:** {updated_vendor.get('CM Manager_Email', 'N/A')}")
-        st.write(f"**{get_field_display_name('SP_Email')}:** {updated_vendor.get('SP_Email', 'N/A')}")
-        st.write(f"**{get_field_display_name('SP Manager_Email')}:** {updated_vendor.get('SP Manager_Email', 'N/A')}")
-        st.write(f"**{get_field_display_name('OVERRIDE_EMAIL')}:** {updated_vendor.get('OVERRIDE_EMAIL', 'N/A')}")
+        st.write(f"**Soft Chargeback Effective Date:** {updated_vendor.get('Soft Chargeback Effective Date', 'N/A')}")
+        st.write(f"**Hard Chargeback Effective Date:** {updated_vendor.get('Hard Chargeback Effective Date', 'N/A')}")
+        st.write(f"**CM_Email:** {updated_vendor.get('CM_Email', 'N/A')}")
+        st.write(f"**CM Manager_Email:** {updated_vendor.get('CM Manager_Email', 'N/A')}")
+        st.write(f"**SP_Email:** {updated_vendor.get('SP_Email', 'N/A')}")
+        st.write(f"**SP Manager_Email:** {updated_vendor.get('SP Manager_Email', 'N/A')}")
+        st.write(f"**OVERRIDE_EMAIL:** {updated_vendor.get('OVERRIDE_EMAIL', 'N/A')}")
     
     # Navigation button - receipt screen is now standalone, needs navigation
     st.markdown("---")
-    if st.button("← Back to Search", type="primary", use_container_width=True):
-        st.session_state.current_mode = 'search'
-        st.session_state.tier_change_receipt = None
-        st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔍 View Search Results", use_container_width=True):
+            refresh_search_results(show_warning=True)
+            if st.session_state.search_results:
+                st.session_state.current_mode = 'results'
+                st.session_state.tier_change_receipt = None
+                st.rerun()
+            else:
+                st.info("No search results available. Use 'Back to Search' instead.")
+    with col2:
+        if st.button("← Back to Search", use_container_width=True):
+            st.session_state.current_mode = 'search'
+            st.session_state.tier_change_receipt = None
+            st.session_state.search_results = None
+            st.session_state.selected_vendor = None
+            st.rerun()
 
 def show_new_entry_screen():
     """Display new vendor entry form"""
@@ -758,7 +953,8 @@ def show_new_entry_screen():
     
     # New entry guidance
     st.info("""
-    **📝 New Vendor Entry**: Fill in the required fields below. One row per (Vendor Number, FILE).
+    **📝 New Vendor Entry**: Fill in the required fields below. 
+    **Note**: Selecting Tier2 will automatically create both Tier2 and 6Months entries with identical data.
     """)
     
     # New entry form
@@ -768,14 +964,13 @@ def show_new_entry_screen():
         # Vendor Number (read-only)
         st.text_input("Vendor Number", value=vendor_number, disabled=True)
         
-        # FILE selection - ordered: 6Months -> Tier2 -> Tier1 -> None, default to 6Months
+        # FILE selection - show all options but restrict Tier1
         col1, col2 = st.columns([2, 3])
         with col1:
             file_value = st.selectbox(
                 "FILE",
-                ["6Months", "Tier2", "Tier1", "None"],
-                index=0,  # Default to '6Months'
-                help="Tier1 requires CPFR team authorization. Select 6Months, Tier2, Tier1, or None.",
+                ["Tier1", "Tier2", "6Months", "3Months"],
+                help="Tier1 requires CPFR team authorization. Select Tier2, 6Months, or 3Months.",
                 key="new_file_field"
             )
         
@@ -790,6 +985,13 @@ def show_new_entry_screen():
                 # Reset to default (Tier2) - this will be validated again on submission
                 file_value = "Tier2"
         
+        # Show guidance for Tier2
+        if file_value == "Tier2":
+            st.caption("""
+            💡 **Tier2**: Creates both Tier2 and 6Months entries automatically.
+            💡 **Other tiers**: Creates single entry only.
+            """)
+        
         # Get required and editable fields
         required_fields = st.session_state.vendor_processor.get_required_fields()
         editable_fields = st.session_state.vendor_processor.get_editable_fields()
@@ -798,45 +1000,34 @@ def show_new_entry_screen():
         new_vendor_data = {"Vendor Number": vendor_number, "FILE": file_value}
         
         for field in editable_fields:
-            # Get display name for field label
-            field_label = get_field_display_name(field)
-            
-            if field == 'Vendor Contacts':
+            if field in ['Vendor Contacts', 'CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email', 'OVERRIDE_EMAIL']:
+                is_first_email_field = (field == 'Vendor Contacts')
                 new_vendor_data[field] = st.text_area(
-                    field_label,
-                    help="Enter semicolon-separated email addresses"
+                    field,
+                    help="Enter semicolon-separated email addresses" if field == 'Vendor Contacts' else f"Enter {field.lower()}"
                 )
-                st.caption("💡 **Format**: `email1@example.com;email2@example.com` (semicolon-separated, required)")
-            elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
-                # These email fields use text_input (single line)
-                new_vendor_data[field] = st.text_input(
-                    field_label,
-                    help="Enter semicolon-separated email addresses (optional)"
-                )
-                st.caption("💡 Semicolon-delimited format (optional)")
-            elif field == 'OVERRIDE_EMAIL':
-                new_vendor_data[field] = st.text_area(
-                    field_label,
-                    help="Enter semicolon-separated email addresses (optional)"
-                )
-                st.caption("💡 Semicolon-delimited format (optional)")
+                # Full explanation for first email field (Vendor Contacts is required), short for others
+                if is_first_email_field:
+                    st.caption("💡 **Format**: `email1@example.com;email2@example.com` (semicolon-separated, required)")
+                else:
+                    st.caption("💡 Semicolon-delimited format (optional)")
             elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
                 # Use a checkbox to enable/disable date input
-                enable_date = st.checkbox(f"Set {field_label}", key=f"enable_{field}")
+                enable_date = st.checkbox(f"Set {field}", key=f"enable_{field}")
                 if enable_date:
                     date_value = st.date_input(
-                        field_label,
+                        field,
                         help="Select effective date",
                         key=f"date_{field}"
                     )
                     new_vendor_data[field] = date_value.strftime('%Y-%m-%d') if date_value else None
                 else:
                     new_vendor_data[field] = None
-                    st.info(f"💡 {field_label} will be set to NULL")
+                    st.info(f"💡 {field} will be set to NULL")
             else:
                 new_vendor_data[field] = st.text_input(
-                    field_label,
-                    help=f"Enter {field_label.lower()}"
+                    field,
+                    help=f"Enter {field.lower()}"
                 )
         
         # Submit button
@@ -859,8 +1050,6 @@ def show_new_entry_screen():
 
 def save_new_vendor(vendor_data: Dict[str, Any], file_value: str):
     """Save new vendor to database"""
-    vendor_number = vendor_data.get('Vendor Number', '')
-
     try:
         # Validate FILE field - prevent Tier1 selection
         if file_value == "Tier1":
@@ -885,57 +1074,32 @@ def save_new_vendor(vendor_data: Dict[str, Any], file_value: str):
             st.error(f"❌ Required fields missing: {', '.join(missing_fields)}")
             return
         
+        # Use the new insert method (handles dual entry automatically)
         success = st.session_state.db_manager.insert_vendor(vendor_data)
         
         if success:
-            st.success("✅ Vendor created successfully!")
-
-            # Write audit record for successful insert
-            st.session_state.db_manager.write_audit_record(
-                action_type='INSERT',
-                status='SUCCESS',
-                vendor_number=vendor_number,
-                before_state=None,
-                after_state=vendor_data,
-                changed_fields=list(vendor_data.keys()),
-                session_id=_get_streamlit_session_id(),
-            )
+            if file_value == "Tier2":
+                st.success("✅ Created both Tier2 and 6Months entries successfully!")
+            else:
+                st.success("✅ Vendor created successfully!")
             
             # Show created vendor info that persists
             st.subheader("📋 Created Vendor Information")
             for field, value in vendor_data.items():
                 if field not in ['Vendor Number', 'FILE']:
                     display_value = str(value).strip() if value and str(value).strip() else '(null)'
-                    field_label = get_field_display_name(field)
-                    st.write(f"**{field_label}**: {display_value}")
+                    st.write(f"**{field}**: {display_value}")
+            
+            # Clear search cache to ensure fresh data on subsequent searches
+            cached_search.clear()
+            refresh_search_results()
+            
             
             # Don't auto-return to search - keep form visible
         else:
-            # Write audit record for failed insert (DB returned False)
-            st.session_state.db_manager.write_audit_record(
-                action_type='INSERT',
-                status='ERROR',
-                vendor_number=vendor_number,
-                before_state=None,
-                after_state=None,
-                changed_fields=list(vendor_data.keys()),
-                error_message='Database operation returned False; see application logs.',
-                session_id=_get_streamlit_session_id(),
-            )
             st.error("❌ Failed to create vendor")
     
     except Exception as e:
-        # Write audit record for unexpected exception
-        st.session_state.db_manager.write_audit_record(
-            action_type='INSERT',
-            status='ERROR',
-            vendor_number=vendor_number,
-            before_state=None,
-            after_state=None,
-            changed_fields=list(vendor_data.keys()) if vendor_data else None,
-            error_message=str(e)[:5000],
-            session_id=_get_streamlit_session_id(),
-        )
         st.error(f"❌ Error creating vendor: {str(e)}")
         logger.error(f"Create vendor error: {e}")
 

@@ -1,0 +1,24 @@
+AUDIT_ID,EVENT_TS,EVENT_ID,ACTION_TYPE,STATUS,TARGET_TABLE,VENDOR_NUMBER,SNOWFLAKE_USER,CHEWY_USERNAME,BEFORE_STATE,AFTER_STATE,ERROR_MESSAGE,CHANGED_FIELDS,APP_NAME,APP_VERSION,SESSION_ID
+1,2026-03-28 19:45:44.760,EXAMPLE_ROW_DO_NOT_DELETE,EXAMPLE,REFERENCE,EDLDB.SC_SANDBOX.VC_CPFR_VENDOR_EMAIL,,example_snowflake_user,example_chewy_username,"{
+  ""CM Manager_Email"": null,
+  ""CM_Email"": null,
+  ""FILE"": null,
+  ""OVERRIDE_EMAIL"": null,
+  ""Parent Vendor"": null,
+  ""SP Manager_Email"": null,
+  ""SP_Email"": null,
+  ""Vendor Contacts"": null,
+  ""Vendor Name"": null,
+  ""Vendor Number"": null
+}","{
+  ""CM Manager_Email"": ""cm_manager_example@chewy.com"",
+  ""CM_Email"": ""cm_example@chewy.com"",
+  ""FILE"": ""Tier1"",
+  ""OVERRIDE_EMAIL"": ""override_example@chewy.com"",
+  ""Parent Vendor"": ""example parent vendor"",
+  ""SP Manager_Email"": ""sp_manager_example@chewy.com"",
+  ""SP_Email"": ""sp_example@chewy.com"",
+  ""Vendor Contacts"": ""example1@chewy.com; example2@chewy.com"",
+  ""Vendor Name"": ""example value"",
+  ""Vendor Number"": ""example value""
+}","Reference row only. BEFORE_STATE is intentionally all nulls to demonstrate an empty prior state. Schema reference: Vendor Number VARCHAR(50), Vendor Name VARCHAR(350), Vendor Contacts VARCHAR(1000), Parent Vendor VARCHAR(300), CM_Email VARCHAR(500), CM Manager_Email VARCHAR(200), SP_Email VARCHAR(200), SP Manager_Email VARCHAR(200), FILE VARCHAR(50), OVERRIDE_EMAIL VARCHAR(1000).","Vendor Number, Vendor Name, Vendor Contacts, Parent Vendor, CM_Email, CM Manager_Email, SP_Email, SP Manager_Email, FILE, OVERRIDE_EMAIL",VC_CPFR_EMAIL_STREAMLIT,1.0,example_session

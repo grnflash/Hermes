@@ -2,19 +2,15 @@
 Vendor Processor for CPFR Vendor Contact Streamlit Manager
 
 Handles business logic, validation, and data processing for vendor contact management.
-Single-row model: one row per (Vendor Number, FILE). Supports duplicate labeling for
-multiple rows per vendor (FILE primacy: Tier1 > Tier2 > 6Months > None).
+Implements Tier2+6Months logic and email validation.
 """
 
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import logging
 
 logger = logging.getLogger(__name__)
-
-# FILE primacy for duplicate labeling: first is primary, rest are subordinates
-FILE_PRIMACY_ORDER = ['Tier1', 'Tier2', '6Months', 'None']
 
 @dataclass
 class ValidationResult:
@@ -25,8 +21,11 @@ class ValidationResult:
 
 @dataclass
 class VendorSearchResult:
-    """Result of vendor search operation. vendors list includes is_primary and duplicate_label per row."""
+    """Result of vendor search operation"""
     vendors: List[Dict[str, Any]]
+    has_dual_entries: bool
+    tier2_entries: List[Dict[str, Any]]
+    other_entries: List[Dict[str, Any]]
 
 class EmailValidator:
     """Handles email validation and normalization"""
@@ -87,48 +86,22 @@ class VendorProcessor:
     def __init__(self):
         self.email_validator = EmailValidator()
     
-    def _file_primacy_rank(self, file_value: str) -> int:
-        """Return sort rank for FILE (lower = higher primacy). Tier1 > Tier2 > 6Months > None."""
-        try:
-            return FILE_PRIMACY_ORDER.index(file_value)
-        except ValueError:
-            return len(FILE_PRIMACY_ORDER)
-    
-    def _row_fingerprint(self, row: Dict[str, Any], exclude_keys: Optional[List[str]] = None) -> str:
-        """Stable string for comparing rows (excluding FILE and Vendor Number for same-FILE compare)."""
-        exclude = set(exclude_keys or []) | {'FILE', 'Vendor Number'}
-        parts = []
-        for k in sorted(row.keys()):
-            if k in exclude:
-                continue
-            v = row.get(k)
-            parts.append(f"{k}={repr(v)}")
-        return "|".join(parts)
-    
     def process_search_results(self, df) -> VendorSearchResult:
         """
-        Process search results: sort by FILE primacy, label duplicates.
-
-        FILE values are pre-normalized by DatabaseManager.search_vendors before this
-        method receives them. For each vendor number, rows are ordered by FILE primacy
-        (Tier1 > Tier2 > 6Months > None). First row is primary; additional rows get
-        is_primary=False and duplicate_label:
-        - Different FILE from primary: "(duplicate)"
-        - Same FILE, other fields differ: "(duplicate - other)"
-        - Same FILE, identical: "(duplicate 2)", "(duplicate 3)", ...
-
+        Process search results and identify dual entries
+        
         Args:
-            df: DataFrame with search results (FILE column already normalized)
-
+            df: DataFrame with search results
+            
         Returns:
-            VendorSearchResult with vendors list (each row has is_primary, duplicate_label)
+            VendorSearchResult with organized vendor data
         """
         if df.empty:
-            return VendorSearchResult([])
-
+            return VendorSearchResult([], False, [], [])
+        
         vendors = df.to_dict('records')
         
-        # Group by Vendor Number
+        # Group by Vendor Number to identify dual entries
         vendor_groups = {}
         for vendor in vendors:
             vendor_number = vendor['Vendor Number']
@@ -136,41 +109,26 @@ class VendorProcessor:
                 vendor_groups[vendor_number] = []
             vendor_groups[vendor_number].append(vendor)
         
-        result_list = []
-        for vendor_number, group in vendor_groups.items():
-            # Sort by FILE primacy (Tier1 first, then Tier2, 6Months, None)
-            group_sorted = sorted(
-                group,
-                key=lambda r: (self._file_primacy_rank(r.get('FILE', '')), self._row_fingerprint(r))
-            )
-            primary = group_sorted[0]
-            primary['is_primary'] = True
-            primary['duplicate_label'] = None
-            result_list.append(primary)
+        # Check for Tier2+6Months combinations
+        has_dual_entries = False
+        tier2_entries = []
+        other_entries = []
+        
+        for vendor_number, vendor_list in vendor_groups.items():
+            file_values = [v['FILE'] for v in vendor_list]
             
-            if len(group_sorted) == 1:
-                continue
-            
-            primary_fingerprint = self._row_fingerprint(primary)
-            primary_file = primary.get('FILE', '')
-            identical_count = 0
-            
-            for sub in group_sorted[1:]:
-                sub['is_primary'] = False
-                sub_file = sub.get('FILE', '')
-                sub_fingerprint = self._row_fingerprint(sub)
-                
-                if sub_file != primary_file:
-                    sub['duplicate_label'] = '(duplicate)'
-                elif sub_fingerprint != primary_fingerprint:
-                    sub['duplicate_label'] = '(duplicate - other)'
-                else:
-                    identical_count += 1
-                    sub['duplicate_label'] = f'(duplicate {identical_count + 1})'
-                result_list.append(sub)
+            # Check if this vendor has Tier2+6Months combination
+            if 'Tier2' in file_values and '6Months' in file_values:
+                has_dual_entries = True
+                tier2_entries.extend([v for v in vendor_list if v['FILE'] in ['Tier2', '6Months']])
+            else:
+                other_entries.extend(vendor_list)
         
         return VendorSearchResult(
-            vendors=result_list
+            vendors=vendors,
+            has_dual_entries=has_dual_entries,
+            tier2_entries=tier2_entries,
+            other_entries=other_entries
         )
     
     def validate_vendor_data(self, vendor_data: Dict[str, Any]) -> ValidationResult:
@@ -243,6 +201,26 @@ class VendorProcessor:
                     changes[field] = str(new_value).strip()
         
         return changes
+    
+    def create_dual_entry_data(self, vendor_data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Create data for both Tier2 and 6Months entries
+        
+        Args:
+            vendor_data: Base vendor data
+            
+        Returns:
+            Tuple of (tier2_data, sixmonths_data)
+        """
+        # Create copies of the base data
+        tier2_data = vendor_data.copy()
+        sixmonths_data = vendor_data.copy()
+        
+        # Set FILE values
+        tier2_data['FILE'] = 'Tier2'
+        sixmonths_data['FILE'] = '6Months'
+        
+        return tier2_data, sixmonths_data
     
     def get_required_fields(self) -> List[str]:
         """

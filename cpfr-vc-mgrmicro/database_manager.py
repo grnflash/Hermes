@@ -238,6 +238,31 @@ class DatabaseManager:
             logger.error(f"Search failed: {e}")
             raise
     
+    def fetch_all_vendors_browse(self) -> pd.DataFrame:
+        """
+        Load all rows from VC_CPFR_VENDOR_EMAIL for tabular browse mode.
+
+        FILE values are normalized the same way as search_vendors so the UI and
+        get_vendor() stay consistent.
+
+        Returns:
+            DataFrame with every column from the table, ordered by vendor and FILE
+        """
+        session = self.get_session()
+        query = f"""
+            SELECT * FROM {self.table_name}
+            ORDER BY "Vendor Number", "FILE"
+        """
+        try:
+            df = session.sql(query).to_pandas()
+            logger.info(f"Browse load: {len(df)} vendor records (full table)")
+            if 'FILE' in df.columns:
+                df['FILE'] = df['FILE'].apply(self._normalize_file_value_for_display)
+            return df
+        except Exception as e:
+            logger.error(f"fetch_all_vendors_browse failed: {e}")
+            raise
+    
     def get_vendor(self, vendor_number: str, file_value: str) -> Optional[Dict[str, Any]]:
         """
         Get a specific vendor record

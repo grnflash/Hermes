@@ -8,8 +8,17 @@ Duplicate rows for the same vendor are shown with labels; cleanup is handled in 
 
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any
+import inspect
+import re
+from typing import Dict, Any, List
 import logging
+
+try:
+    from streamlit.errors import StreamlitInvalidHeightError
+except ImportError:
+    class StreamlitInvalidHeightError(Exception):
+        """Fallback when streamlit.errors.StreamlitInvalidHeightError is unavailable."""
+        pass
 
 from database_manager import DatabaseManager
 from vendor_processor import VendorProcessor, VendorSearchResult
@@ -96,6 +105,256 @@ if 'original_vendor' not in st.session_state:
 if 'file_changing' not in st.session_state:
     st.session_state.file_changing = False
 
+if 'edit_origin' not in st.session_state:
+    st.session_state.edit_origin = None  # None | 'search_results' | 'tabular'
+
+if 'tabular_full_df' not in st.session_state:
+    st.session_state.tabular_full_df = None
+
+if 'tabular_view_nonce' not in st.session_state:
+    st.session_state.tabular_view_nonce = 0
+
+if 'tabular_browse_prefs' not in st.session_state:
+    st.session_state.tabular_browse_prefs = None  # dict set by helpers; None = use defaults
+
+if 'tabular_widgets_were_visible' not in st.session_state:
+    st.session_state.tabular_widgets_were_visible = False
+
+
+def _default_tabular_browse_prefs() -> Dict[str, Any]:
+    """Default persisted tabular filter prefs (survives edit/receipt when widgets unmount)."""
+    return {"text": {}, "file": []}
+
+
+def _get_tabular_browse_prefs() -> Dict[str, Any]:
+    """Return the mutable prefs dict for tabular filters (never None)."""
+    if st.session_state.tabular_browse_prefs is None:
+        st.session_state.tabular_browse_prefs = _default_tabular_browse_prefs()
+    p = st.session_state.tabular_browse_prefs
+    for legacy in ("sort_col", "sort_dir"):
+        p.pop(legacy, None)
+    return p
+
+
+def _browse_column_safe_key(col: Any) -> str:
+    """Stable key fragment for a dataframe column name."""
+    return re.sub(r"[^0-9a-zA-Z]+", "_", str(col)).strip("_") or "col"
+
+
+def _restore_tabular_browse_widgets_from_prefs(full_df: pd.DataFrame) -> None:
+    """
+    Push persisted prefs into widget session_state keys after edit/receipt (widgets were unmounted).
+
+    Args:
+        full_df: Current browse base DataFrame
+    """
+    prefs = _get_tabular_browse_prefs()
+    for col in full_df.columns:
+        if str(col) == "FILE":
+            continue
+        safe = _browse_column_safe_key(col)
+        wkey = f"browse_ft_{safe}"
+        st.session_state[wkey] = prefs["text"].get(safe, "")
+
+    file_options = _distinct_file_filter_options(full_df) if "FILE" in full_df.columns else []
+    valid = set(file_options)
+    st.session_state["browse_file_multiselect"] = [x for x in prefs["file"] if x in valid]
+
+
+def _sync_tabular_browse_prefs_from_widgets(full_df: pd.DataFrame) -> None:
+    """
+    Snapshot current widget values into tabular_browse_prefs for cross-mode persistence.
+
+    Args:
+        full_df: Current browse base DataFrame (defines columns / safe keys)
+    """
+    prefs = _get_tabular_browse_prefs()
+    texts: Dict[str, str] = {}
+    for col in full_df.columns:
+        if str(col) == "FILE":
+            continue
+        safe = _browse_column_safe_key(col)
+        wkey = f"browse_ft_{safe}"
+        texts[safe] = str(st.session_state.get(wkey, "") or "")
+    prefs["text"] = texts
+    prefs["file"] = list(st.session_state.get("browse_file_multiselect") or [])
+
+
+def _reset_tabular_browse_filters() -> None:
+    """
+    Clear persisted tabular filter prefs and widget keys.
+
+    Used when leaving tabular via Back to Search, or when opening the table from
+    Search (View full table) so filters start empty. Not used when returning from
+    edit/receipt (prefs must survive for restore).
+    """
+    st.session_state.tabular_browse_prefs = _default_tabular_browse_prefs()
+    st.session_state.tabular_widgets_were_visible = False
+    for k in list(st.session_state.keys()):
+        if k.startswith("browse_ft_") or k in ("browse_file_multiselect",):
+            try:
+                del st.session_state[k]
+            except KeyError:
+                pass
+
+
+def _widget_with_autocomplete_off(widget_fn, *args, **kwargs):
+    """
+    Wrap Streamlit text widgets so browsers get autocomplete=off when supported.
+
+    Reduces browser autofill and saved-value popups on sensitive operational fields.
+    Only adds the parameter if the installed Streamlit exposes it and it was not set.
+
+    Args:
+        widget_fn: st.text_input or st.text_area
+        *args, **kwargs: Passed through to the widget
+    """
+    try:
+        sig = inspect.signature(widget_fn)
+        if "autocomplete" in sig.parameters and "autocomplete" not in kwargs:
+            kwargs = {**kwargs, "autocomplete": "off"}
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return widget_fn(*args, **kwargs)
+
+
+def _text_input_no_autofill(*args, **kwargs) -> str:
+    """st.text_input with autocomplete disabled when the runtime supports it."""
+    return _widget_with_autocomplete_off(st.text_input, *args, **kwargs)
+
+
+def _text_area_no_autofill(*args, **kwargs) -> str:
+    """st.text_area with autocomplete disabled when the runtime supports it."""
+    return _widget_with_autocomplete_off(st.text_area, *args, **kwargs)
+
+
+def _streamlit_supports_dataframe_row_selection() -> bool:
+    """
+    Return True if st.dataframe supports on_select and selection_mode (Streamlit 1.35+).
+
+    SiS may pin an older Streamlit; when False, tabular browse uses selectbox fallback.
+
+    Returns:
+        Whether row selection kwargs are available on st.dataframe
+    """
+    try:
+        sig = inspect.signature(st.dataframe)
+        return "selection_mode" in sig.parameters and "on_select" in sig.parameters
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _tabular_row_label(df: pd.DataFrame, index: int) -> str:
+    """
+    Build a short label for the tabular browse row picker fallback.
+
+    Args:
+        df: Filtered/sorted browse DataFrame
+        index: Row position in df
+
+    Returns:
+        Single-line summary for selectbox display
+    """
+    row = df.iloc[index]
+    vn = row.get("Vendor Number", "")
+    fv = row.get("FILE", "")
+    vname = row.get("Vendor Name", "")
+    return f"{index}: {vn} | {fv} | {vname}"
+
+
+def _file_cell_display_value(cell: Any) -> str:
+    """
+    Map a FILE cell from the browse DataFrame to the string used in filters and multiselect.
+
+    NULL/NaN align with the form-level label 'None'.
+
+    Args:
+        cell: Raw FILE value from pandas
+
+    Returns:
+        Display string for matching (e.g. 'None', 'Tier1')
+    """
+    if cell is None:
+        return "None"
+    if isinstance(cell, float) and pd.isna(cell):
+        return "None"
+    s = str(cell).strip()
+    return s if s else "None"
+
+
+def _distinct_file_filter_options(df: pd.DataFrame) -> List[str]:
+    """
+    Distinct FILE values for the tabular multiselect, refreshed whenever browse data loads.
+
+    Args:
+        df: Full browse DataFrame (FILE column already normalized at DB boundary)
+
+    Returns:
+        Sorted options with 'None' first when any NULL/empty FILE rows exist
+    """
+    if df is None or "FILE" not in df.columns:
+        return []
+    labels = {_file_cell_display_value(v) for v in df["FILE"]}
+    return sorted(labels, key=lambda x: (0 if x == "None" else 1, x))
+
+
+def _render_tabular_dataframe(display_df: pd.DataFrame, **kwargs: Any) -> Any:
+    """
+    Render the browse grid with tall vertical space.
+
+    SiS may reject height='stretch' on st.dataframe unless it sits inside a stretch
+    container (StreamlitInvalidHeightError). We try container+stretch first, then
+    stretch alone, then large pixel heights so the grid is usable with page scroll.
+
+    Args:
+        display_df: Data to show
+        **kwargs: Extra st.dataframe arguments (e.g. on_select, selection_mode, key)
+
+    Returns:
+        st.dataframe return value
+    """
+    base: Dict[str, Any] = {"use_container_width": True}
+    height_reject = (TypeError, ValueError, StreamlitInvalidHeightError)
+
+    try:
+        sig = inspect.signature(st.container)
+        if "height" in sig.parameters:
+            try:
+                with st.container(height="stretch"):
+                    return st.dataframe(display_df, **base, height="stretch", **kwargs)
+            except height_reject:
+                pass
+    except (TypeError, ValueError, AttributeError):
+        pass
+
+    for height in ("stretch", 960, 720):
+        try:
+            return st.dataframe(display_df, **base, height=height, **kwargs)
+        except height_reject:
+            continue
+
+    return st.dataframe(display_df, **base, **kwargs)
+
+
+def _navigate_tabular_row_to_edit(row: pd.Series) -> None:
+    """
+    Load fresh vendor from Snowflake (or row dict) and open the edit screen from tabular browse.
+
+    Args:
+        row: One row from the browse DataFrame (Vendor Number + FILE identify the key)
+    """
+    vendor_number = row.get("Vendor Number")
+    file_value = row.get("FILE", "None")
+    try:
+        fresh = st.session_state.db_manager.get_vendor(str(vendor_number), file_value)
+        st.session_state.selected_vendor = fresh if fresh else row.to_dict()
+    except Exception:
+        st.session_state.selected_vendor = row.to_dict()
+    st.session_state.edit_origin = "tabular"
+    st.session_state.current_mode = "edit"
+    st.rerun()
+
+
 def main():
     """Main application entry point"""
     # CRITICAL: st.set_page_config() MUST be the first Streamlit command
@@ -110,7 +369,8 @@ def main():
     # validate_session_state() should NEVER be called here
     # If validation is needed, call it during user interactions, not initialization
 
-    st.title("📧 CPFR VC Vendor Info Manager")
+    if st.session_state.current_mode != "tabular":
+        st.title("📧 CPFR VC Vendor Info Manager")
 
     # Verify connection (silently) - cached to avoid long-running queries
     if 'connection_verified' not in st.session_state:
@@ -144,6 +404,8 @@ def main():
         show_new_entry_screen()
     elif st.session_state.current_mode == 'receipt':
         show_receipt_screen()
+    elif st.session_state.current_mode == 'tabular':
+        show_tabular_screen()
     else:
         st.error("Invalid application state")
         st.session_state.current_mode = 'search'
@@ -180,15 +442,23 @@ def show_search_screen():
             - **Vendor Contacts**: Partial match (searches email addresses)
             """)
     
-    # Search input
-    search_value = st.text_input(
+    # Search input (autocomplete off: reduce browser saved-value popups)
+    search_value = _text_input_no_autofill(
         f"Enter {search_type_display.lower()}:",
         help="Enter partial text for name/company searches, exact number for vendor number",
-        key="search_value_input"
+        key="search_value_input",
     )
     
-    # Search button
-    search_clicked = st.button("🔍 Search", type="primary")
+    btn_search, btn_table = st.columns([1, 1])
+    with btn_search:
+        search_clicked = st.button("🔍 Search", type="primary")
+    with btn_table:
+        if st.button("📊 View full table", type="secondary", help="Browse all rows, filter, sort, then open edit"):
+            _reset_tabular_browse_filters()
+            st.session_state.current_mode = "tabular"
+            st.session_state.tabular_full_df = None
+            st.session_state.tabular_view_nonce = st.session_state.get("tabular_view_nonce", 0) + 1
+            st.rerun()
     
     # Handle search
     if search_clicked and search_value:
@@ -313,8 +583,149 @@ def display_results_list(search_result: VendorSearchResult):
                     st.session_state.selected_vendor = fresh_vendor if fresh_vendor else vendor
                 except Exception:
                     st.session_state.selected_vendor = vendor
+                st.session_state.edit_origin = "search_results"
                 st.session_state.current_mode = 'edit'
                 st.rerun()
+
+
+def show_tabular_screen():
+    """
+    Load the full vendor email table, apply optional filters and sort, show row counts,
+    and route a selected row into the same edit flow as search results.
+    """
+    h1, h2, h3 = st.columns([2, 1, 1])
+    with h1:
+        st.markdown("#### Table view (all vendors)")
+    with h2:
+        if st.button("← Back to Search", key="tabular_back_search"):
+            st.session_state.current_mode = "search"
+            st.session_state.tabular_full_df = None
+            _reset_tabular_browse_filters()
+            st.rerun()
+    with h3:
+        refresh = st.button("Refresh data", key="tabular_refresh")
+
+    st.caption(
+        "Sort by clicking a column header in the table. Use Filters below for partial-match narrowing (Streamlit "
+        "cannot embed per-column text filters in the grid headers). Pin, hide, and autosize use the column menu."
+    )
+
+    if st.session_state.tabular_full_df is None or refresh:
+        with st.spinner("Loading full table..."):
+            try:
+                st.session_state.tabular_full_df = st.session_state.db_manager.fetch_all_vendors_browse()
+            except Exception as e:
+                st.error(f"Failed to load table: {e}")
+                logger.error(f"Tabular browse load failed: {e}", exc_info=True)
+                return
+
+    full_df = st.session_state.tabular_full_df
+    if full_df is None or full_df.empty:
+        st.warning("No data returned from the database.")
+        return
+
+    if not st.session_state.tabular_widgets_were_visible:
+        _restore_tabular_browse_widgets_from_prefs(full_df)
+
+    total_rows = len(full_df)
+    filtered = full_df.copy()
+    file_selection: List[str] = []
+
+    with st.expander("Filters (partial match per column)", expanded=False):
+        for col in full_df.columns:
+            if str(col) == "FILE":
+                file_options = _distinct_file_filter_options(full_df)
+                file_selection = st.multiselect(
+                    "FILE",
+                    options=file_options,
+                    key="browse_file_multiselect",
+                    help=(
+                        "Filter by tier (distinct values from the loaded table). "
+                        "Leave empty to include all FILE values. NULL FILE appears as None."
+                    ),
+                )
+                continue
+            safe = _browse_column_safe_key(col)
+            label = get_field_display_name(str(col))
+            raw = _text_input_no_autofill(
+                label,
+                key=f"browse_ft_{safe}",
+                help="Case-insensitive substring; leave empty to skip this column",
+            )
+            text = (raw or "").strip()
+            if text:
+                pat = re.escape(text)
+                filtered = filtered[
+                    filtered[col].astype(str).str.contains(pat, case=False, na=False, regex=True)
+                ]
+
+    if file_selection:
+        fv = filtered["FILE"].map(_file_cell_display_value)
+        filtered = filtered[fv.isin(file_selection)]
+
+    # Sort only via the native dataframe UI (column header); no Python-side sort controls.
+    display_df = filtered.reset_index(drop=True)
+    if display_df.empty:
+        st.warning("No rows match the current filters.")
+
+    shown = len(display_df)
+    st.markdown(f"**Showing {shown} / {total_rows} rows**")
+
+    nonce = st.session_state.get("tabular_view_nonce", 0)
+    df_widget_key = f"browse_df_{nonce}"
+
+    if _streamlit_supports_dataframe_row_selection():
+        try:
+            event = _render_tabular_dataframe(
+                display_df,
+                on_select="rerun",
+                selection_mode="single-row",
+                key=df_widget_key,
+            )
+            selection = getattr(event, "selection", None)
+            rows = getattr(selection, "rows", None) if selection is not None else None
+            if rows:
+                idx = int(rows[0])
+                if 0 <= idx < len(display_df):
+                    _sync_tabular_browse_prefs_from_widgets(full_df)
+                    st.session_state.tabular_widgets_were_visible = False
+                    _navigate_tabular_row_to_edit(display_df.iloc[idx])
+        except Exception as ex:
+            logger.warning("Dataframe row selection failed (%s); using fallback picker.", ex)
+            _render_tabular_dataframe(display_df)
+            st.info("Row selection is not available in this Streamlit build; use the picker below.")
+            _tabular_fallback_edit(display_df, nonce, full_df)
+    else:
+        _render_tabular_dataframe(display_df)
+        _tabular_fallback_edit(display_df, nonce, full_df)
+
+    _sync_tabular_browse_prefs_from_widgets(full_df)
+    st.session_state.tabular_widgets_were_visible = True
+
+
+def _tabular_fallback_edit(display_df: pd.DataFrame, nonce: int, full_df: pd.DataFrame) -> None:
+    """
+    When st.dataframe row selection is unavailable, pick a row by index then open edit.
+
+    Args:
+        display_df: Current filtered/sorted browse data
+        nonce: Widget key suffix so returning from edit remounts controls cleanly
+        full_df: Base browse DataFrame for persisting filter prefs before navigation
+    """
+    if display_df.empty:
+        return
+    options = list(range(len(display_df)))
+    pick = st.selectbox(
+        "Select row to edit",
+        options=options,
+        format_func=lambda i: _tabular_row_label(display_df, i),
+        key=f"browse_pick_{nonce}",
+    )
+    if st.button("Open selected row in editor", key=f"browse_open_{nonce}"):
+        _sync_tabular_browse_prefs_from_widgets(full_df)
+        st.session_state.tabular_widgets_were_visible = False
+        _navigate_tabular_row_to_edit(display_df.iloc[int(pick)])
+
 
 def show_edit_screen():
     """Display vendor editing interface"""
@@ -397,25 +808,25 @@ def show_edit_screen():
             
             if field == 'Vendor Contacts':
                 # Vendor Contacts uses text_area
-                updated_data[field] = st.text_area(
+                updated_data[field] = _text_area_no_autofill(
                     field_label,
                     value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)"
+                    help="Enter semicolon-separated email addresses (leave empty for NULL)",
                 )
                 st.caption("💡 **Format**: `email1@example.com;email2@example.com;email3@example.com` (semicolon-separated). This format applies to all email fields below.")
             elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
                 # These email fields use text_input (single line)
-                updated_data[field] = st.text_input(
+                updated_data[field] = _text_input_no_autofill(
                     field_label,
                     value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)"
+                    help="Enter semicolon-separated email addresses (leave empty for NULL)",
                 )
             elif field == 'OVERRIDE_EMAIL':
                 # OVERRIDE_EMAIL uses text_area
-                updated_data[field] = st.text_area(
+                updated_data[field] = _text_area_no_autofill(
                     field_label,
                     value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)"
+                    help="Enter semicolon-separated email addresses (leave empty for NULL)",
                 )
             elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
                 # Date fields with NULL option
@@ -448,10 +859,10 @@ def show_edit_screen():
                     st.info(f"💡 {field_label} will be set to NULL")
             else:
                 # Regular text fields
-                updated_data[field] = st.text_input(
+                updated_data[field] = _text_input_no_autofill(
                     field_label,
                     value=display_value,
-                    help=f"Enter {field_label.lower()} (leave empty for NULL)"
+                    help=f"Enter {field_label.lower()} (leave empty for NULL)",
                 )
         
         # Submit button
@@ -459,19 +870,31 @@ def show_edit_screen():
         
         # Back button at bottom of form (visible even when confirmation view appears below)
         st.markdown("---")
-        back_clicked = st.form_submit_button("← Back to Search", use_container_width=True)
+        origin = st.session_state.get("edit_origin")
+        if origin == "tabular":
+            back_label = "← Back to table"
+        elif origin == "search_results" or (origin is None and st.session_state.search_results):
+            back_label = "← Back to results"
+        else:
+            back_label = "← Back to Search"
+        back_clicked = st.form_submit_button(back_label, use_container_width=True)
         
         if submitted and not back_clicked:
             save_vendor_changes(vendor, updated_data)
         
         if back_clicked:
-            # If we have search results, go back to results screen; otherwise go to search screen
-            if st.session_state.search_results:
-                st.session_state.current_mode = 'results'
+            if origin == "tabular":
+                st.session_state.current_mode = "tabular"
+                st.session_state.tabular_view_nonce = st.session_state.get("tabular_view_nonce", 0) + 1
+            elif origin == "search_results" and st.session_state.search_results:
+                st.session_state.current_mode = "results"
+            elif st.session_state.search_results:
+                st.session_state.current_mode = "results"
             else:
-                st.session_state.current_mode = 'search'
+                st.session_state.current_mode = "search"
                 st.session_state.search_results = None
             st.session_state.selected_vendor = None
+            st.session_state.edit_origin = None
             st.rerun()
     
     # Show confirmation button if there are pending changes
@@ -633,7 +1056,7 @@ def confirm_vendor_changes() -> bool:
                 session_id=_get_streamlit_session_id(),
             )
 
-            # Create receipt data
+            # Create receipt data (edit_origin snapshot for receipt navigation after save)
             receipt_data = {
                 'vendor_number': vendor_number,
                 'original_vendor': original_vendor,
@@ -641,7 +1064,8 @@ def confirm_vendor_changes() -> bool:
                 'changes': changes,
                 'file_changed': file_changing,
                 'original_file': original_file,
-                'new_file': new_file if file_changing else original_file
+                'new_file': new_file if file_changing else original_file,
+                'edit_origin': st.session_state.get('edit_origin'),
             }
 
             # Clear pending changes and move to receipt screen
@@ -744,12 +1168,62 @@ def show_receipt_screen():
         st.write(f"**{get_field_display_name('SP Manager_Email')}:** {updated_vendor.get('SP Manager_Email', 'N/A')}")
         st.write(f"**{get_field_display_name('OVERRIDE_EMAIL')}:** {updated_vendor.get('OVERRIDE_EMAIL', 'N/A')}")
     
-    # Navigation button - receipt screen is now standalone, needs navigation
+    # Navigation: dual-track exit (table vs search) plus results when a search list exists
     st.markdown("---")
-    if st.button("← Back to Search", type="primary", use_container_width=True):
-        st.session_state.current_mode = 'search'
+    st.subheader("Where next?")
+    st.caption(
+        "Table filters and the in-memory grid stay in this session. Use Refresh on the table after saves if you "
+        "need that row to reflect the latest values. Choose table to keep working the same filtered view, or "
+        "search / results to switch tracks."
+    )
+
+    def _clear_receipt_and_edit_state() -> None:
         st.session_state.tier_change_receipt = None
-        st.rerun()
+        st.session_state.selected_vendor = None
+        st.session_state.edit_origin = None
+        st.session_state.pending_changes = None
+        st.session_state.original_vendor = None
+
+    origin_snap = receipt.get("edit_origin")
+    has_results = bool(st.session_state.search_results)
+
+    if origin_snap == "tabular":
+        primary_table, primary_results, primary_search = True, False, False
+    elif origin_snap == "search_results" and has_results:
+        primary_table, primary_results, primary_search = False, True, False
+    else:
+        primary_table, primary_results, primary_search = False, False, True
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button(
+            "Continue in table view",
+            type="primary" if primary_table else "secondary",
+            use_container_width=True,
+        ):
+            _clear_receipt_and_edit_state()
+            st.session_state.current_mode = "tabular"
+            st.session_state.tabular_view_nonce = st.session_state.get("tabular_view_nonce", 0) + 1
+            st.rerun()
+    with c2:
+        if st.button(
+            "Back to Search",
+            type="primary" if primary_search else "secondary",
+            use_container_width=True,
+        ):
+            _clear_receipt_and_edit_state()
+            st.session_state.current_mode = "search"
+            st.rerun()
+
+    if has_results:
+        if st.button(
+            "Back to search results",
+            type="primary" if primary_results else "secondary",
+            use_container_width=True,
+        ):
+            _clear_receipt_and_edit_state()
+            st.session_state.current_mode = "results"
+            st.rerun()
 
 def show_new_entry_screen():
     """Display new vendor entry form"""
@@ -766,7 +1240,7 @@ def show_new_entry_screen():
         st.subheader("Vendor Information")
         
         # Vendor Number (read-only)
-        st.text_input("Vendor Number", value=vendor_number, disabled=True)
+        _text_input_no_autofill("Vendor Number", value=vendor_number, disabled=True)
         
         # FILE selection - ordered: 6Months -> Tier2 -> Tier1 -> None, default to 6Months
         col1, col2 = st.columns([2, 3])
@@ -802,22 +1276,22 @@ def show_new_entry_screen():
             field_label = get_field_display_name(field)
             
             if field == 'Vendor Contacts':
-                new_vendor_data[field] = st.text_area(
+                new_vendor_data[field] = _text_area_no_autofill(
                     field_label,
-                    help="Enter semicolon-separated email addresses"
+                    help="Enter semicolon-separated email addresses",
                 )
                 st.caption("💡 **Format**: `email1@example.com;email2@example.com` (semicolon-separated, required)")
             elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
                 # These email fields use text_input (single line)
-                new_vendor_data[field] = st.text_input(
+                new_vendor_data[field] = _text_input_no_autofill(
                     field_label,
-                    help="Enter semicolon-separated email addresses (optional)"
+                    help="Enter semicolon-separated email addresses (optional)",
                 )
                 st.caption("💡 Semicolon-delimited format (optional)")
             elif field == 'OVERRIDE_EMAIL':
-                new_vendor_data[field] = st.text_area(
+                new_vendor_data[field] = _text_area_no_autofill(
                     field_label,
-                    help="Enter semicolon-separated email addresses (optional)"
+                    help="Enter semicolon-separated email addresses (optional)",
                 )
                 st.caption("💡 Semicolon-delimited format (optional)")
             elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
@@ -834,9 +1308,9 @@ def show_new_entry_screen():
                     new_vendor_data[field] = None
                     st.info(f"💡 {field_label} will be set to NULL")
             else:
-                new_vendor_data[field] = st.text_input(
+                new_vendor_data[field] = _text_input_no_autofill(
                     field_label,
-                    help=f"Enter {field_label.lower()}"
+                    help=f"Enter {field_label.lower()}",
                 )
         
         # Submit button

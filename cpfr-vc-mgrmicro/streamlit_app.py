@@ -398,6 +398,93 @@ def main():
         # initial_sidebar_state="collapsed"  # REMOVED - ReferenceApp doesn't have this
     )
 
+    # Button color scheme — key-based CSS architecture:
+    #
+    #   Every non-primary button has an explicit key that encodes its color tier:
+    #     btn_tan_*    -> warm tan/bronze  (non-default forward/utility actions)
+    #     btn_back_*   -> gunmetal grey    (all backward navigation)
+    #     btn_purple_* -> royal purple     (special: "View full table" only)
+    #
+    #   Primary (blue) buttons use type="primary" and are untouched by this CSS.
+    #   Form-submit back buttons also use btn_back_* keys.
+    #
+    #   CSS uses ONLY .st-key-{key} wrapper selectors — no data-testid, no
+    #   attribute selectors. This is version-agnostic and works in SiS because
+    #   Streamlit wraps every keyed widget in a div.st-key-{key} regardless of
+    #   Streamlit version, container type (expander, form, columns), or theme.
+    #
+    #   The btn_view_full_table key is an alias for btn_purple_view_full_table
+    #   kept for backwards compatibility with the existing key name.
+    st.markdown(
+        """
+        <style>
+        /* ═══════════════════════════════════════════════════════════
+           MIXIN — shared button reset applied via each color block.
+           All three non-primary tiers need: solid border, white text,
+           smooth transition, and cursor pointer.
+           ═══════════════════════════════════════════════════════════ */
+
+        /* ── TAN  (btn_tan_*) ── */
+        [class*="st-key-btn_tan_"] button {
+            background-color: #b5986a !important;
+            color: #ffffff !important;
+            border: 1px solid #9e8055 !important;
+            transition: background-color 0.15s ease, border-color 0.15s ease !important;
+        }
+        [class*="st-key-btn_tan_"] button:hover,
+        [class*="st-key-btn_tan_"] button:focus-visible {
+            background-color: #9e8055 !important;
+            border-color: #7d6240 !important;
+            color: #ffffff !important;
+        }
+        [class*="st-key-btn_tan_"] button:active {
+            background-color: #7d6240 !important;
+            border-color: #6b5234 !important;
+            color: #ffffff !important;
+        }
+
+        /* ── GUNMETAL  (btn_back_*) ── */
+        [class*="st-key-btn_back_"] button {
+            background-color: #4a5568 !important;
+            color: #e2e8f0 !important;
+            border: 1px solid #2d3748 !important;
+            transition: background-color 0.15s ease, border-color 0.15s ease !important;
+        }
+        [class*="st-key-btn_back_"] button:hover,
+        [class*="st-key-btn_back_"] button:focus-visible {
+            background-color: #2d3748 !important;
+            border-color: #1a202c !important;
+            color: #ffffff !important;
+        }
+        [class*="st-key-btn_back_"] button:active {
+            background-color: #1a202c !important;
+            border-color: #0d1117 !important;
+            color: #ffffff !important;
+        }
+
+        /* ── PURPLE  (btn_view_full_table — legacy key kept) ── */
+        .st-key-btn_view_full_table button {
+            background-color: #6b3fa0 !important;
+            border-color: #552f80 !important;
+            color: #ffffff !important;
+            transition: background-color 0.15s ease, border-color 0.15s ease !important;
+        }
+        .st-key-btn_view_full_table button:hover,
+        .st-key-btn_view_full_table button:focus-visible {
+            background-color: #552f80 !important;
+            border-color: #3f2060 !important;
+            color: #ffffff !important;
+        }
+        .st-key-btn_view_full_table button:active {
+            background-color: #3f2060 !important;
+            border-color: #2e1545 !important;
+            color: #ffffff !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     # REMOVED - This was causing corruption by modifying state during initialization
     # validate_session_state() should NEVER be called here
     # If validation is needed, call it during user interactions, not initialization
@@ -486,7 +573,7 @@ def show_search_screen():
     with btn_search:
         search_clicked = st.button("🔍 Search", type="primary")
     with btn_table:
-        if st.button("📊 View full table", type="secondary", help="Browse all rows, filter, sort, then open edit"):
+        if st.button("📊 View full table", type="secondary", key="btn_view_full_table", help="Browse all rows, filter, sort, then open edit"):
             _reset_tabular_browse_filters()
             st.session_state.current_mode = "tabular"
             st.session_state.tabular_full_df = None
@@ -505,7 +592,7 @@ def show_search_screen():
             len(st.session_state.search_results.vendors) == 0):
 
             st.success("✅ No vendor found - you can create a new entry")
-            new_entry_clicked = st.button("➕ Create New Entry", type="secondary")
+            new_entry_clicked = st.button("➕ Create New Entry", type="primary")
             if new_entry_clicked:
                 st.session_state.search_value = search_value
                 st.session_state.current_mode = 'new'
@@ -523,7 +610,7 @@ def show_search_screen():
         st.markdown("""
 **Standard Operating Procedure**
 
-The full SOP for this tool is available here: [CPFR Vendor Contact Manager SOP](#) *(link pending)*
+The full SOP for this tool is available here: [CPFR Vendor Contact Manager SOP](https://chewycomllc-my.sharepoint.com/personal/nmiles1_chewy_com/_layouts/15/guestaccess.aspx?share=IQD3h0RRMVWKT6dYquWy2m60AUaAIkF_CwUVoXoWbsxoG3M&e=kmQhM1)
 
 ---
 
@@ -531,8 +618,8 @@ The full SOP for this tool is available here: [CPFR Vendor Contact Manager SOP](
 
 For Tier1 authorization requests, tool issues, or general CPFR questions, contact the CPFR team:
 
-- **CPFR Program Lead**: [cpfr-team@chewy.com](mailto:cpfr-team@chewy.com) *(placeholder)*
-- **Tool Support**: [cpfr-support@chewy.com](mailto:cpfr-support@chewy.com) *(placeholder)*
+- **CPFR Program Lead**: [nmiles1@chewy.com](mailto:nmiles1@chewy.com)
+- **VC/Chargeback Program Lead**: [nnelson2@chewy.com](mailto:nnelson2@chewy.com)
         """)
 
 
@@ -600,7 +687,7 @@ def show_results_screen():
     st.write(f"Search term: {st.session_state.search_value}")
     
     # Back to search button
-    if st.button("← Back to Search"):
+    if st.button("← Back to Search", type="secondary", key="btn_back_search_from_results"):
         st.session_state.current_mode = 'search'
         st.session_state.search_results = None
         st.rerun()
@@ -627,7 +714,7 @@ def display_results_list(search_result: VendorSearchResult):
             st.write(f"**{vendor_number}** - {vendor_name} ({display_file})")
         
         with col2:
-            if st.button(f"Edit", key=f"edit_{i}"):
+            if st.button(f"Edit", type="primary", key=f"edit_{i}"):
                 try:
                     fresh_vendor = st.session_state.db_manager.get_vendor(vendor_number, vendor['FILE'])
                     st.session_state.selected_vendor = fresh_vendor if fresh_vendor else vendor
@@ -647,13 +734,13 @@ def show_tabular_screen():
     with h1:
         st.markdown("#### Table view (all vendors)")
     with h2:
-        if st.button("← Back to Search", key="tabular_back_search"):
+        if st.button("← Back to Search", type="secondary", key="btn_back_search_tabular"):
             st.session_state.current_mode = "search"
             st.session_state.tabular_full_df = None
             _reset_tabular_browse_filters()
             st.rerun()
     with h3:
-        refresh = st.button("Refresh data", key="tabular_refresh")
+        refresh = st.button("Refresh data", type="primary", key="tabular_refresh")
 
     st.caption(
         "Sort by clicking a column header in the table. Use Filters below for partial-match narrowing (Streamlit "
@@ -682,7 +769,7 @@ def show_tabular_screen():
     file_selection: List[str] = []
 
     with st.expander("Filters (partial match per column)", expanded=False):
-        if st.button("Clear all filters", key="browse_clear_filters"):
+        if st.button("Clear all filters", type="secondary", key="btn_tan_clear_filters"):
             _reset_tabular_browse_filters()
             st.rerun()
         for col in full_df.columns:
@@ -774,7 +861,7 @@ def _tabular_fallback_edit(display_df: pd.DataFrame, nonce: int, full_df: pd.Dat
         format_func=lambda i: _tabular_row_label(display_df, i),
         key=f"browse_pick_{nonce}",
     )
-    if st.button("Open selected row in editor", key=f"browse_open_{nonce}"):
+    if st.button("Open selected row in editor", type="primary", key=f"browse_open_{nonce}"):
         _sync_tabular_browse_prefs_from_widgets(full_df)
         st.session_state.tabular_widgets_were_visible = False
         _navigate_tabular_row_to_edit(display_df.iloc[int(pick)])
@@ -934,7 +1021,7 @@ def show_edit_screen():
             back_label = "← Back to results"
         else:
             back_label = "← Back to Search"
-        back_clicked = st.form_submit_button(back_label, use_container_width=True)
+        back_clicked = st.form_submit_button(back_label, use_container_width=True, key="btn_back_edit_form")
         
         if submitted and not back_clicked:
             save_vendor_changes(vendor, updated_data)
@@ -968,7 +1055,7 @@ def show_edit_screen():
                     st.rerun()
         
         with col2:
-            if st.button("❌ Cancel Changes"):
+            if st.button("❌ Cancel Changes", type="secondary", key="btn_tan_cancel_changes"):
                 st.session_state.pending_changes = None
                 st.session_state.original_vendor = None
                 st.rerun()
@@ -1225,14 +1312,7 @@ def show_receipt_screen():
         st.write(f"**{get_field_display_name('SP Manager_Email')}:** {updated_vendor.get('SP Manager_Email', 'N/A')}")
         st.write(f"**{get_field_display_name('OVERRIDE_EMAIL')}:** {updated_vendor.get('OVERRIDE_EMAIL', 'N/A')}")
     
-    # Navigation: dual-track exit (table vs search) plus results when a search list exists
     st.markdown("---")
-    st.subheader("Where next?")
-    st.caption(
-        "Table filters and the in-memory grid stay in this session. Use Refresh on the table after saves if you "
-        "need that row to reflect the latest values. Choose table to keep working the same filtered view, or "
-        "search / results to switch tracks."
-    )
 
     def _clear_receipt_and_edit_state() -> None:
         st.session_state.tier_change_receipt = None
@@ -1255,7 +1335,8 @@ def show_receipt_screen():
     with c1:
         if st.button(
             "Continue in table view",
-            type="primary" if primary_table else "secondary",
+            type="secondary",
+            key="btn_tan_continue_table",
             use_container_width=True,
         ):
             _clear_receipt_and_edit_state()
@@ -1266,6 +1347,7 @@ def show_receipt_screen():
         if st.button(
             "Back to Search",
             type="primary" if primary_search else "secondary",
+            key="btn_back_search_receipt",
             use_container_width=True,
         ):
             _clear_receipt_and_edit_state()
@@ -1275,7 +1357,8 @@ def show_receipt_screen():
     if has_results:
         if st.button(
             "Back to search results",
-            type="primary" if primary_results else "secondary",
+            type="primary",
+            key="btn_back_results_receipt",
             use_container_width=True,
         ):
             _clear_receipt_and_edit_state()
@@ -1376,7 +1459,7 @@ def show_new_entry_screen():
         
         # Back button at bottom of form (visible even when confirmation view appears below)
         st.markdown("---")
-        back_clicked = st.form_submit_button("← Back to Search", use_container_width=True)
+        back_clicked = st.form_submit_button("← Back to Search", use_container_width=True, key="btn_back_new_entry_form")
     
     # Handle form submission outside the form
     if submitted and not back_clicked:

@@ -3,24 +3,36 @@
  *
  * Prerequisites:
  *   The style module (../Chewy Style Template/chewy_docx_style.js) requires the
- *   docx package next to it. Install dependencies in both folders once:
+ *   docx package installed next to it. Run once before building:
  *     cd "../Chewy Style Template" && npm install
- *     cd ../cpfr-vc-mgrmicro && npm install
  *
  * Usage (from this directory):
- *   npm run build:sop
+ *   node build_sop.js
+ *     -- or --
+ *   npm run build:sop   (after npm install in this directory too, for the script alias)
  *
  * Output: CPFR_VC_Vendor_Info_Manager_SOP.docx (same directory as SOP.md)
+ *
+ * IMPORTANT: Document, Packer, Table, TableRow, and WidthType are intentionally
+ * loaded from the style template's own node_modules so that every object in the
+ * document tree comes from the same docx module instance. Mixing two instances
+ * causes Word to see empty paragraphs (rootKey serialization instead of XML).
  */
 
 'use strict';
 
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
-const { Document, Packer, Table, TableRow, WidthType } = require('docx');
 
+// Load the style module first so its node_modules/docx is resolved.
 const STYLE_PATH = path.join(__dirname, '..', 'Chewy Style Template', 'chewy_docx_style.js');
 const S = require(STYLE_PATH);
+
+// Resolve docx from the style module's own directory so we share one instance.
+// Load index.cjs explicitly -- the package.json main points to the UMD browser
+// bundle which does not export CJS symbols correctly under Node require().
+const DOCX_PATH = path.join(__dirname, '..', 'Chewy Style Template', 'node_modules', 'docx', 'build', 'index.cjs');
+const { Document, Packer, Table, TableRow, WidthType } = require(DOCX_PATH);
 
 const SOP_MD = path.join(__dirname, 'SOP.md');
 const OUT_DOCX = path.join(__dirname, 'CPFR_VC_Vendor_Info_Manager_SOP.docx');

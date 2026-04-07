@@ -10,13 +10,13 @@
 
 The **CPFR VC Vendor Info Manager** is the intended interface for maintaining the VC-CPFR vendor information that drives email distribution for automated reports and VC communications. It is designed to make this work fast, accurate, and safe -- with built-in validation, a confirmation step before anything is saved, and a complete audit trail for every change.
 
-Using this tool rather than direct database access is the right approach. It surfaces the right fields, enforces the right formats, prevents a category of common mistakes, and keeps a record that makes corrections straightforward. The CPFR team expects this to be the standard method going forward.
+Using this tool rather than direct database access is the right approach. It surfaces the correct fields, enforces the right formats, prevents a category of common mistakes, and keeps a record that makes corrections straightforward. The CPFR team expects this to be the standard self-service method going forward.
 
 ---
 
 ## 2. Access
 
-Open the **CPFR VC Vendor Info Manager** through Snowflake -- navigate to **Projects > Streamlit Apps** and select the app from the list.
+Open the **CPFR VC Vendor Info Manager** through Snowflake -- navigate to **Projects > Streamlit Apps** and select the app from the list. You can access it directly, here: https://app.snowflake.com/streamlit/chewy/chewy/#/apps/z3y7n6izoatbnpebwxgq
 
 If the app fails to load or returns a connection error, confirm that your Snowflake session is active and that your network allows Snowflake traffic. If access problems persist, contact the CPFR team or your Snowflake administrator.
 
@@ -24,21 +24,23 @@ If the app fails to load or returns a connection error, confirm that your Snowfl
 
 ## 3. How the Tool Works
 
-### 3.1 Vendor tiers (FILE)
+### 3.1 Vendor tiers
 
-Each vendor record has a **FILE** value that determines its CPFR distribution tier and cadence. The options are:
+Each vendor record has a **Tier** value that determines its CPFR distribution tier. The options are:
 
-| FILE | What it means |
-|------|---------------|
-| **Tier1** | Managed at the parent-company level. Tier1 records require CPFR vetting before they are created or reclassified, because the way vendor identity is keyed for Tier1 differs from other tiers. **You cannot set a record to Tier1 in this app** -- contact CPFR. |
-| **Tier2** | Standard individual-vendor tier. |
-| **6Months** | Six-month cadence tier. |
+| Tier value | What it means |
+|------------|---------------|
+| **Tier1** | Strategic vendors. Managed at the parent-company level. Tier1 records require CPFR vetting before they are created or reclassified, because the way vendor identity is keyed for Tier1 differs from other tiers. **You cannot set a record to Tier1 in this app** — contact CPFR. |
+| **Tier2** | High-touch vendors. Data shared includes the 6-month forecast (same as below) plus Inventory, consisting of [OH, OO, AS Demand, PDP OOS%, Fill-Rate%, and DOS] |
+| **6Months** | This is the legacy value for 'Tier 3'. Six-month demand forecast only. |
 | **None** | No tier assigned. |
+
+___Additional detail can be found in the tool, describing tier metrics and the consistency of each tier.___
 
 ### 3.2 Email fields and how they control distribution
 
 - **Vendor Contacts** is the primary recipient list for CPFR emails on that record.
-- If **Override Email** is filled in, it takes over completely -- only those addresses receive reports, and Vendor Contacts is bypassed until Override Email is cleared.
+- If **Override Email** is filled in, it takes over entirely from "Vendor Contacts" -- only those addresses receive reports, and Vendor Contacts is bypassed until Override Email is cleared. This is an effective way to "lock" a static list of vendor contacts, or to ensure no external recipients. This field is not modified during standard updates, including batch updates.
 - The other email fields (Category Manager, In-Stock Manager, and their respective AD emails) are maintained for visibility and downstream use.
 - All email fields accept multiple addresses in **semicolon-separated** format: `first@chewy.com;second@chewy.com`
 
@@ -47,7 +49,7 @@ Each vendor record has a **FILE** value that determines its CPFR distribution ti
 Edits follow a deliberate two-step flow to prevent accidental saves:
 
 1. Open a vendor record from search or the table view and make your changes.
-2. Click **Save Changes** -- nothing is written yet. The app shows a **Changes Summary** listing every field with its old and new value.
+2. Click **Save Changes** -- nothing is written yet. The app shows a **Changes Summary** listing every field with its old and new value. The tool will also perform business logic and formatting checks at this time.
 3. Review the summary, then click **Confirm Changes** to save, or **Cancel Changes** to discard.
 4. A **receipt** screen appears after a successful save. It shows exactly what changed and the record's current state. This is your best opportunity to catch something wrong before you move on -- if you spot an error, you can go right back and make another edit.
 
@@ -62,9 +64,9 @@ From the **Search** screen, choose how you want to look up the vendor:
 - **Vendor Number** -- exact, case-sensitive match. Type the full vendor number as it is stored.
 - **Vendor Name**, **Parent Company**, **Vendor Contacts** -- partial, case-insensitive match. Any fragment works.
 
-Enter your term and click **Search**. Results show the vendor number, name, and FILE for each matching record. Click **Edit** on the record you want to open.
+Enter your term and click **Search**. Results show the vendor number, name, and Tier for each matching record. Click **Edit** on the record you want to open.
 
-**When you see duplicate labels:** If a vendor number has more than one record, the lower-priority rows are tagged `(duplicate)` or similar. Pick the record with the FILE you intend to edit, and flag the duplication to CPFR if cleanup is needed.
+**When you see duplicate labels:** If a vendor number has more than one record, the lower-priority rows are tagged `(duplicate)` or similar. Pick the record with the Tier you intend to edit, and flag the duplication to CPFR if cleanup is needed.
 
 **Back to Search** returns you to the search screen and clears the result list.
 

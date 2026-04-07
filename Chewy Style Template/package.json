@@ -1,0 +1,8 @@
+{
+  "name": "chewy-docx-style",
+  "private": true,
+  "description": "Shared docx style module for programmatic Word documents",
+  "dependencies": {
+    "docx": "^8.5.0"
+  }
+}

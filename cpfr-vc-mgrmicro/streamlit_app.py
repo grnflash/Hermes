@@ -34,8 +34,41 @@ FIELD_DISPLAY_NAMES = {
     'CM Manager_Email': 'Category Merch AD Email',
     'SP_Email': 'In-Stock Manager Email',
     'SP Manager_Email': 'In-Stock AD Email',
-    'OVERRIDE_EMAIL': 'Override Email'
+    'OVERRIDE_EMAIL': 'Override Email',
+    'FILE': 'Tier',
 }
+
+OVERRIDE_EMAIL_PLACEHOLDER = (
+    "Addresses entered here override Vendor Contacts and are not updated during batch uploads. "
+    "Use this field to lock vendor assignments or durably exclude vendors from CPFR. "
+    "Leave empty to restore normal Vendor Contacts routing. "
+    "This field has no effect on VC/Chargeback apps."
+)
+
+TIER_INFO_MARKDOWN = """
+| Metric | Tier 3 | Tier 2 | Tier 1 |
+|---|---|---|---|
+| **Forecast** | Current Month | Current Month | Current Month |
+| | Next 6-Months | Next 6-Months | Next 6-Months |
+| **Autoship** | | AS Demand (30 days) | AS Demand (30 days) |
+| | | | AS-Backorders |
+| **Inventory** | | On Hand Units | On Hand Units |
+| | | On Order Units | On Order Units |
+| **OOS** | | PDP% (avg 30-day) | PDP% (avg 30-day) |
+| **Fill Rate** | | Fill-Rate% (avg 30-day) | Fill-Rate% (avg 30-day) |
+| **DOS** | | DOS | DOS |
+| **NOP** | | | NOP by FC |
+| | | | NOP by Region |
+| | | | NOP / OP Demand |
+| | | | Total Demand |
+| **Catalog** | | | Published Y/N |
+| | | | Discontinued Y/N |
+| | | | MOQ |
+| | | | Base UOM, Purchase UOM |
+| | | | Eaches per Case/Layer/Pallet |
+| | | | Order divisibility by Pallet/Layer |
+| | | | Temp Disable |
+"""
 
 def get_field_display_name(field_name: str) -> str:
     """Get display name for a field, or return original if no mapping exists"""
@@ -467,10 +500,10 @@ def show_search_screen():
     # Show create button only after search with no results
     if search_type == "Vendor Number":
         # Check if we just performed a search with no results
-        if (st.session_state.search_performed and 
-            st.session_state.search_results and 
+        if (st.session_state.search_performed and
+            st.session_state.search_results and
             len(st.session_state.search_results.vendors) == 0):
-            
+
             st.success("✅ No vendor found - you can create a new entry")
             new_entry_clicked = st.button("➕ Create New Entry", type="secondary")
             if new_entry_clicked:
@@ -484,7 +517,24 @@ def show_search_screen():
             # Show helpful message
             if search_value:
                 st.info("💡 Click 'Search' to check if this vendor already exists")
-    
+
+    st.markdown("---")
+    with st.expander("📖 SOP & Support", expanded=False):
+        st.markdown("""
+**Standard Operating Procedure**
+
+The full SOP for this tool is available here: [CPFR Vendor Contact Manager SOP](#) *(link pending)*
+
+---
+
+**CPFR Team Contacts**
+
+For Tier1 authorization requests, tool issues, or general CPFR questions, contact the CPFR team:
+
+- **CPFR Program Lead**: [cpfr-team@chewy.com](mailto:cpfr-team@chewy.com) *(placeholder)*
+- **Tool Support**: [cpfr-support@chewy.com](mailto:cpfr-support@chewy.com) *(placeholder)*
+        """)
+
 
 def _get_streamlit_session_id() -> str:
     """
@@ -632,16 +682,19 @@ def show_tabular_screen():
     file_selection: List[str] = []
 
     with st.expander("Filters (partial match per column)", expanded=False):
+        if st.button("Clear all filters", key="browse_clear_filters"):
+            _reset_tabular_browse_filters()
+            st.rerun()
         for col in full_df.columns:
             if str(col) == "FILE":
                 file_options = _distinct_file_filter_options(full_df)
                 file_selection = st.multiselect(
-                    "FILE",
+                    "Tier",
                     options=file_options,
                     key="browse_file_multiselect",
                     help=(
                         "Filter by tier (distinct values from the loaded table). "
-                        "Leave empty to include all FILE values. NULL FILE appears as None."
+                        "Leave empty to include all tiers. NULL tier appears as None."
                     ),
                 )
                 continue
@@ -740,7 +793,7 @@ def show_edit_screen():
         return
     
     file_value = vendor.get('FILE', 'Unknown')
-    st.header(f"✏️ Edit Vendor: {vendor.get('Vendor Number', 'Unknown')} ({file_value})")
+    st.header(f"✏️ Edit Vendor: {vendor.get('Vendor Number', 'Unknown')} (Tier: {file_value})")
     
     # Edit form
     with st.form("vendor_edit_form"):
@@ -773,16 +826,16 @@ def show_edit_screen():
             else:
                 file_index = 0
                 logger.warning(f"Unrecognized FILE value '{current_file}', defaulting to '6Months'")
-            
+
             updated_file = st.selectbox(
-                "FILE",
+                "Tier",
                 file_options,
                 index=file_index,
                 help="Tier1 changes require CPFR team authorization. Select 6Months, Tier2, Tier1, or None.",
                 key="edit_file_field"
             )
-        
-        # Tier1 authorization note
+
+        # Tier1 authorization note / Tier info expander
         tier1_error = updated_file == "Tier1" and current_file != "Tier1"
         with col2:
             if tier1_error:
@@ -790,6 +843,9 @@ def show_edit_screen():
                 st.markdown(f"Please contact the CPFR team: [nmiles1@chewy.com](mailto:nmiles1@chewy.com)")
             elif updated_file == "Tier1":
                 st.info("ℹ️ Current value is Tier1. Changes to Tier1 require CPFR team authorization.")
+            else:
+                with st.expander("ℹ️ About Tiers", expanded=False):
+                    st.markdown(TIER_INFO_MARKDOWN, unsafe_allow_html=False)
         
         updated_data = {"FILE": updated_file}
         
@@ -826,6 +882,7 @@ def show_edit_screen():
                 updated_data[field] = _text_area_no_autofill(
                     field_label,
                     value=display_value,
+                    placeholder=OVERRIDE_EMAIL_PLACEHOLDER,
                     help="Enter semicolon-separated email addresses (leave empty for NULL)",
                 )
             elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
@@ -1156,7 +1213,7 @@ def show_receipt_screen():
     
     with col1:
         st.write(f"**Vendor Number:** {updated_vendor.get('Vendor Number', 'N/A')}")
-        st.write(f"**FILE:** {updated_vendor.get('FILE', 'N/A')}")
+        st.write(f"**Tier:** {updated_vendor.get('FILE', 'N/A')}")
         st.write(f"**Vendor Name:** {updated_vendor.get('Vendor Name', 'N/A')}")
         st.write(f"**Vendor Contacts:** {updated_vendor.get('Vendor Contacts', 'N/A')}")
         st.write(f"**{get_field_display_name('Parent Vendor')}:** {updated_vendor.get('Parent Vendor', 'N/A')}")
@@ -1246,7 +1303,7 @@ def show_new_entry_screen():
         col1, col2 = st.columns([2, 3])
         with col1:
             file_value = st.selectbox(
-                "FILE",
+                "Tier",
                 ["6Months", "Tier2", "Tier1", "None"],
                 index=0,  # Default to '6Months'
                 help="Tier1 requires CPFR team authorization. Select 6Months, Tier2, Tier1, or None.",
@@ -1291,6 +1348,7 @@ def show_new_entry_screen():
             elif field == 'OVERRIDE_EMAIL':
                 new_vendor_data[field] = _text_area_no_autofill(
                     field_label,
+                    placeholder=OVERRIDE_EMAIL_PLACEHOLDER,
                     help="Enter semicolon-separated email addresses (optional)",
                 )
                 st.caption("💡 Semicolon-delimited format (optional)")

@@ -582,7 +582,11 @@ def show_search_screen():
     
     # Handle search
     if search_clicked and search_value:
-        perform_search(search_type, search_value)
+        # Vendor Number is an exact-match field; silently upper-case the input so
+        # entries like 'p12345' are treated identically to 'P12345'. All other
+        # search types are partial/case-insensitive and are left unchanged.
+        effective_search_value = search_value.upper() if search_type == "Vendor Number" else search_value
+        perform_search(search_type, effective_search_value)
     
     # Show create button only after search with no results
     if search_type == "Vendor Number":
@@ -594,7 +598,7 @@ def show_search_screen():
             st.success("✅ No vendor found - you can create a new entry")
             new_entry_clicked = st.button("➕ Create New Entry", type="primary")
             if new_entry_clicked:
-                st.session_state.search_value = search_value
+                st.session_state.search_value = search_value.upper()
                 st.session_state.current_mode = 'new'
                 # Clear search state before transitioning
                 st.session_state.search_performed = False

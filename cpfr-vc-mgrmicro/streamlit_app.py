@@ -38,11 +38,141 @@ FIELD_DISPLAY_NAMES = {
     'FILE': 'Tier',
 }
 
+# ── Badge pill colours ──────────────────────────────────────────────────────
+# CPFR pill: deep teal.  VC pill: burnt orange.  n/a pill: mid grey.
+_PILL_CPFR_BG  = "#006455"   # deep teal
+_PILL_VC_BG    = "#C04A00"   # burnt orange (readable on dark backgrounds)
+_PILL_NA_BG    = "#595959"   # mid grey
+_PILL_GAP      = "6px"       # horizontal gap between the two pills
+
+
+
+# Maps each DB field name to (cpfr_designation, vc_designation).
+# Values are "crit", "aux", or None (n/a = no badge rendered).
+FIELD_BADGE_MAP: Dict[str, tuple] = {
+    'FILE':             ('crit', None),
+    'Vendor Name':      ('crit', 'crit'),
+    'Vendor Contacts':  ('crit', 'crit'),
+    'Parent Vendor':    ('aux',  'aux'),
+    'CM_Email':         ('aux',  'crit'),
+    'CM Manager_Email': ('aux',  'crit'),
+    'SP_Email':         ('crit', 'aux'),
+    'SP Manager_Email': ('aux',  'aux'),
+    'OVERRIDE_EMAIL':   ('crit', None),
+}
+
+# Badge column only needs to be wide enough for two short text pills side-by-side.
+# Pills are text-only so no fixed pixel size is needed.
+_BADGE_COL_RATIO  = 2
+_INPUT_COL_RATIO  = 14
+
+
+def _pill(text: str, bg: str) -> str:
+    """
+    Render a single rounded badge pill with white text on a coloured background.
+
+    Args:
+        text: Label shown inside the pill (e.g. 'Crit', 'Aux', 'n/a')
+        bg:   CSS background colour string
+
+    Returns:
+        HTML <span> string for the pill
+    """
+    return (
+        f'<span style="font-size:0.7rem;font-weight:700;color:#ffffff;'
+        f'background-color:{bg};padding:2px 7px;border-radius:999px;'
+        f'white-space:nowrap;">{text}</span>'
+    )
+
+
+def _badge_pair_html(cpfr_desig: str, vc_desig: str) -> str:
+    """
+    Build a single HTML block containing a CPFR pill (teal) and a VC pill
+    (burnt-orange or grey n/a) laid out as a tight flex row.
+
+    The two pills sit in one st.markdown() call so Streamlit wraps them in a
+    single element-container, keeping layout and padding predictable.
+
+    Args:
+        cpfr_desig: 'crit', 'aux', or None
+        vc_desig:   'crit', 'aux', or None
+
+    Returns:
+        HTML string for the flex container holding both pills
+    """
+    cpfr_pill = (
+        _pill('Crit', _PILL_CPFR_BG) if cpfr_desig == 'crit' else
+        _pill('Aux',  _PILL_CPFR_BG) if cpfr_desig == 'aux'  else
+        _pill('n/a',  _PILL_NA_BG)
+    )
+    vc_pill = (
+        _pill('Crit', _PILL_VC_BG) if vc_desig == 'crit' else
+        _pill('Aux',  _PILL_VC_BG) if vc_desig == 'aux'  else
+        _pill('n/a',  _PILL_NA_BG)
+    )
+
+    return (
+        f'<div style="display:flex;flex-direction:row;align-items:center;'
+        f'justify-content:flex-start;gap:{_PILL_GAP};padding-top:1.6rem;">'
+        f'{cpfr_pill}{vc_pill}</div>'
+    )
+
+
+def _render_badge_columns(col_badges, field_key: str) -> None:
+    """
+    Write the CPFR+VC badge pair into the single badge column for a field row.
+
+    Both icons are rendered as one HTML block inside col_badges, avoiding the
+    double inter-column gap that two separate columns would introduce.
+
+    Args:
+        col_badges: Streamlit column object for the combined badge cell
+        field_key:  Internal DB field name used as the FIELD_BADGE_MAP key
+    """
+    cpfr_desig, vc_desig = FIELD_BADGE_MAP.get(field_key, (None, None))
+    with col_badges:
+        st.markdown(_badge_pair_html(cpfr_desig, vc_desig), unsafe_allow_html=True)
+
+
+def _render_edit_form_legend() -> None:
+    """
+    Render a compact column-header legend above the edit/new-entry form.
+    """
+    col_badges, col_key = st.columns([_BADGE_COL_RATIO, _INPUT_COL_RATIO])
+
+    with col_badges:
+        st.markdown(
+            f"""
+            <div style="padding-left:4px;margin-bottom:0.75rem;">
+                <div style="display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:{_PILL_GAP};">
+                    <span style="font-size:0.7rem;font-weight:700;color:white;background-color:{_PILL_CPFR_BG};padding:2px 7px;border-radius:999px;">CPFR</span>
+                    <span style="font-size:0.7rem;font-weight:700;color:white;background-color:{_PILL_VC_BG};padding:2px 7px;border-radius:999px;">VC</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # with col_key:
+    #     st.markdown(
+    #         f"""
+    #         <div style="padding-left:4px;margin-bottom:0rem;font-size:0.8rem;color:rgba(200,200,200,1.0);">
+    #             {_pill('Crit', _PILL_CPFR_BG)}&thinsp;or&thinsp;{_pill('Crit', _PILL_VC_BG)}&nbsp;=&nbsp;Critical
+    #             <span style="display:inline-block;width:1rem;"></span>
+    #             {_pill('Aux', _PILL_CPFR_BG)}&thinsp;or&thinsp;{_pill('Aux', _PILL_VC_BG)}&nbsp;=&nbsp;Auxiliary
+    #             <span style="display:inline-block;width:1rem;"></span>
+    #             {_pill('n/a', _PILL_NA_BG)}&nbsp;=&nbsp;not applicable
+    #         </div>
+    #         """,
+    #         unsafe_allow_html=True,
+    #     )
+
+
 OVERRIDE_EMAIL_PLACEHOLDER = (
-    "Addresses entered here override Vendor Contacts and are not updated during batch uploads. "
-    "Use this field to lock vendor assignments or durably exclude vendors from CPFR. "
-    "Leave empty to restore normal Vendor Contacts routing. "
-    "This field has no effect on VC/Chargeback apps."
+    "Addresses entered here override Vendor Contacts and are not changed by batch uploads. "
+    "Use this field to lock routing to a static set of recipients, "
+    "or enter Chewy-Ops-CPFR@chewy.com to exclude all CPFR distribution and prevent reactivation by batch uploads. "
+    "Leave blank to use normal Vendor Contacts routing. This field does not affect the VC or Chargeback apps. "
 )
 
 TIER_INFO_MARKDOWN = """
@@ -68,6 +198,51 @@ TIER_INFO_MARKDOWN = """
 | | | | Eaches per Case/Layer/Pallet |
 | | | | Order divisibility by Pallet/Layer |
 | | | | Temp Disable |
+"""
+
+# HTML <details> collapsible rendered as a single st.markdown() call.
+# The outer div uses display:flex + justify-content:flex-end so the
+# <details> header is pushed to the bottom of the element, aligning its
+# lower edge with the lower edge of the adjacent selectbox — no hardcoded
+# margin value needed.
+_TIER_INFO_DETAILS_HTML = """
+<div style="display:flex;flex-direction:column;justify-content:flex-end;min-height:3.6rem;">
+<details>
+<summary style="cursor:pointer;font-size:0.9rem;padding:0.45rem 0.75rem;border:1px solid rgba(49,51,63,0.2);border-radius:4px;list-style:none;display:flex;align-items:center;gap:0.4rem;">&#8505;&#65039; About Tiers</summary>
+<div style="font-size:0.85rem;overflow-x:auto;">
+<table style="border-collapse:collapse;width:100%;">
+<thead><tr>
+  <th style="border:1px solid #ccc;padding:4px 8px;">Metric</th>
+  <th style="border:1px solid #ccc;padding:4px 8px;">Tier 3</th>
+  <th style="border:1px solid #ccc;padding:4px 8px;">Tier 2</th>
+  <th style="border:1px solid #ccc;padding:4px 8px;">Tier 1</th>
+</tr></thead>
+<tbody>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>Forecast</strong></td><td style="border:1px solid #ccc;padding:4px 8px;">Current Month</td><td style="border:1px solid #ccc;padding:4px 8px;">Current Month</td><td style="border:1px solid #ccc;padding:4px 8px;">Current Month</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Next 6-Months</td><td style="border:1px solid #ccc;padding:4px 8px;">Next 6-Months</td><td style="border:1px solid #ccc;padding:4px 8px;">Next 6-Months</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>Autoship</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">AS Demand (30 days)</td><td style="border:1px solid #ccc;padding:4px 8px;">AS Demand (30 days)</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">AS-Backorders</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>Inventory</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">On Hand Units</td><td style="border:1px solid #ccc;padding:4px 8px;">On Hand Units</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">On Order Units</td><td style="border:1px solid #ccc;padding:4px 8px;">On Order Units</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>OOS</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">PDP% (avg 30-day)</td><td style="border:1px solid #ccc;padding:4px 8px;">PDP% (avg 30-day)</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>Fill Rate</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Fill-Rate% (avg 30-day)</td><td style="border:1px solid #ccc;padding:4px 8px;">Fill-Rate% (avg 30-day)</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>DOS</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">DOS</td><td style="border:1px solid #ccc;padding:4px 8px;">DOS</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>NOP</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">NOP by FC</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">NOP by Region</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">NOP / OP Demand</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Total Demand</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"><strong>Catalog</strong></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Published Y/N</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Discontinued Y/N</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">MOQ</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Base UOM, Purchase UOM</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Eaches per Case/Layer/Pallet</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Order divisibility by Pallet/Layer</td></tr>
+<tr><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;"></td><td style="border:1px solid #ccc;padding:4px 8px;">Temp Disable</td></tr>
+</tbody>
+</table>
+</div>
+</details>
+</div>
 """
 
 def get_field_display_name(field_name: str) -> str:
@@ -480,6 +655,36 @@ def main():
             border-color: #2e1545 !important;
             color: #ffffff !important;
         }
+
+        /* ── EDIT FORM COLUMN SPACING ──────────────────────────────────
+           Aggressively collapse the inter-column gap and per-column side
+           padding inside both edit forms. Scoped to stForm so search,
+           results, tabular and receipt screens are unaffected.
+
+           Three selector variants are used to cover different Streamlit /
+           SiS DOM builds:
+             - data-testid="stHorizontalBlock"  (Streamlit >= 1.25)
+             - class .stHorizontalBlock          (older SiS builds)
+             - class .element-container          (column inner wrapper)
+           All are set to 0 padding; gap is set to 4px (enough to prevent
+           widgets from visually touching while eliminating dead space).
+           ─────────────────────────────────────────────────────────── */
+        [data-testid="stForm"] [data-testid="stHorizontalBlock"] {
+            gap: 4px !important;
+        }
+        [data-testid="stForm"] .stHorizontalBlock {
+            gap: 4px !important;
+        }
+        [data-testid="stForm"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            padding-left: 0px !important;
+            padding-right: 0px !important;
+            min-width: 0px !important;
+        }
+        [data-testid="stForm"] .stHorizontalBlock > .stColumn {
+            padding-left: 0px !important;
+            padding-right: 0px !important;
+            min-width: 0px !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -609,7 +814,6 @@ def show_search_screen():
             if search_value:
                 st.info("💡 Click 'Search' to check if this vendor already exists")
 
-    st.markdown("---")
     with st.expander("📖 SOP & Support", expanded=False):
         st.markdown("""
 **Standard Operating Procedure**
@@ -619,6 +823,8 @@ The full SOP for this tool is available here: [CPFR Vendor Contact Manager SOP](
 ---
 
 **CPFR Team Contacts**
+
+You can find lots of additional information about CPFR on our confluence page: [CPFR](https://chewyinc.atlassian.net/wiki/spaces/ISCPFR/overview)
 
 For Tier1 authorization requests, tool issues, or general CPFR questions, contact the CPFR team:
 
@@ -747,8 +953,8 @@ def show_tabular_screen():
         refresh = st.button("Refresh data", type="primary", key="tabular_refresh")
 
     st.caption(
-        "Sort by clicking a column header in the table. Use Filters below for partial-match narrowing (Streamlit "
-        "cannot embed per-column text filters in the grid headers). Pin, hide, and autosize use the column menu."
+        "Sort by clicking a column header in the table. Pin, hide, and autosize using column menu. Use Filters below for partial-match narrowing (compound "
+        "filters are allowed)."
     )
 
     if st.session_state.tabular_full_df is None or refresh:
@@ -815,13 +1021,17 @@ def show_tabular_screen():
     shown = len(display_df)
     st.markdown(f"**Showing {shown} / {total_rows} rows**")
 
+    # Rename columns for display using the same aliases as the edit/new-entry forms.
+    # display_df retains original names for row-selection navigation (Vendor Number, FILE, etc.).
+    display_df_renamed = display_df.rename(columns=FIELD_DISPLAY_NAMES)
+
     nonce = st.session_state.get("tabular_view_nonce", 0)
     df_widget_key = f"browse_df_{nonce}"
 
     if _streamlit_supports_dataframe_row_selection():
         try:
             event = _render_tabular_dataframe(
-                display_df,
+                display_df_renamed,
                 on_select="rerun",
                 selection_mode="single-row",
                 key=df_widget_key,
@@ -836,11 +1046,11 @@ def show_tabular_screen():
                     _navigate_tabular_row_to_edit(display_df.iloc[idx])
         except Exception as ex:
             logger.warning("Dataframe row selection failed (%s); using fallback picker.", ex)
-            _render_tabular_dataframe(display_df)
+            _render_tabular_dataframe(display_df_renamed)
             st.info("Row selection is not available in this Streamlit build; use the picker below.")
             _tabular_fallback_edit(display_df, nonce, full_df)
     else:
-        _render_tabular_dataframe(display_df)
+        _render_tabular_dataframe(display_df_renamed)
         _tabular_fallback_edit(display_df, nonce, full_df)
 
     _sync_tabular_browse_prefs_from_widgets(full_df)
@@ -886,6 +1096,9 @@ def show_edit_screen():
     file_value = vendor.get('FILE', 'Unknown')
     st.header(f"✏️ Edit Vendor: {vendor.get('Vendor Number', 'Unknown')} (Tier: {file_value})")
     
+    # Badge legend: column headers aligned over the CPFR and VC badge columns
+    _render_edit_form_legend()
+
     # Edit form
     with st.form("vendor_edit_form"):
         st.subheader("Vendor Information")
@@ -895,7 +1108,7 @@ def show_edit_screen():
         st.info(f"""💡 **NOTE:**
 
 - Only **Vendor Contacts** will receive CPFR emails
-- If **{override_email_label}** is populated, *only* those recipients will receive reports and receipt by **Vendor Contacts** will be temporarily halted.
+- If **{override_email_label}** is populated, *only* those recipients will receive reports.
 - To restore receipt by recipients in **Vendor Contacts**, ensure that **{override_email_label}** is empty.
 """)
         
@@ -910,8 +1123,9 @@ def show_edit_screen():
         
         # FILE options - ordered: 6Months -> Tier2 -> Tier1 -> None (single row per entry)
         file_options = ["6Months", "Tier2", "Tier1", "None"]
-        col1, col2 = st.columns([2, 3])
-        with col1:
+        col_badges, col_tier = st.columns([_BADGE_COL_RATIO, _INPUT_COL_RATIO])
+        _render_badge_columns(col_badges, 'FILE')
+        with col_tier:
             if current_file in file_options:
                 file_index = file_options.index(current_file)
             else:
@@ -926,9 +1140,10 @@ def show_edit_screen():
                 key="edit_file_field"
             )
 
-        # Tier1 authorization note / Tier info expander
-        tier1_error = updated_file == "Tier1" and current_file != "Tier1"
-        with col2:
+            # Tier1 authorization note / Tier info expander — placed directly
+            # below the selectbox inside the same column so the expander bottom
+            # edge is flush with the selectbox bottom edge by construction.
+            tier1_error = updated_file == "Tier1" and current_file != "Tier1"
             if tier1_error:
                 st.error("⚠️ **Tier1 changes require CPFR team authorization.**")
                 st.markdown(f"Please contact the CPFR team: [nmiles1@chewy.com](mailto:nmiles1@chewy.com)")
@@ -937,81 +1152,75 @@ def show_edit_screen():
             else:
                 with st.expander("ℹ️ About Tiers", expanded=False):
                     st.markdown(TIER_INFO_MARKDOWN, unsafe_allow_html=False)
-        
+
         updated_data = {"FILE": updated_file}
-        
+
         # Get editable fields
         editable_fields = st.session_state.vendor_processor.get_editable_fields()
-        
-        # Create form fields
+
+        # Create form fields — each row gets a combined CPFR+VC badge column to the left
         for field in editable_fields:
             current_value = vendor.get(field, '')
-            
+
             # Handle NULL values for display
             display_value = str(current_value).strip() if current_value and str(current_value).strip() else ''
-            
+
             # Get display name for field label
             field_label = get_field_display_name(field)
-            
-            if field == 'Vendor Contacts':
-                # Vendor Contacts uses text_area
-                updated_data[field] = _text_area_no_autofill(
-                    field_label,
-                    value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)",
-                )
-                st.caption("💡 **Format**: `email1@example.com;email2@example.com;email3@example.com` (semicolon-separated). This format applies to all email fields below.")
-            elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
-                # These email fields use text_input (single line)
-                updated_data[field] = _text_input_no_autofill(
-                    field_label,
-                    value=display_value,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)",
-                )
-            elif field == 'OVERRIDE_EMAIL':
-                # OVERRIDE_EMAIL uses text_area
-                updated_data[field] = _text_area_no_autofill(
-                    field_label,
-                    value=display_value,
-                    placeholder=OVERRIDE_EMAIL_PLACEHOLDER,
-                    help="Enter semicolon-separated email addresses (leave empty for NULL)",
-                )
-            elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
-                # Date fields with NULL option
-                current_date = None
-                has_date = False
-                
-                if current_value and str(current_value).strip() and current_value != 'None':
-                    try:
-                        current_date = pd.to_datetime(current_value).date()
-                        has_date = True
-                    except:
-                        current_date = None
-                        has_date = False
-                
-                # Checkbox to enable/disable date
-                st.caption("💡 Use the checkbox to enable/disable the date. Uncheck to set to NULL.")
-                enable_date = st.checkbox(f"Set {field_label}", value=has_date, key=f"edit_enable_{field}")
-                
-                if enable_date:
-                    st.caption("💡 Date will be saved when you submit the form.")
-                    date_value = st.date_input(
+
+            col_badges, col_input = st.columns([_BADGE_COL_RATIO, _INPUT_COL_RATIO])
+            _render_badge_columns(col_badges, field)
+            with col_input:
+                if field == 'Vendor Contacts':
+                    updated_data[field] = _text_area_no_autofill(
                         field_label,
-                        value=current_date,
-                        help="Select effective date",
-                        key=f"edit_date_{field}"
+                        value=display_value,
+                        help="Enter semicolon-separated email addresses (leave empty for NULL)",
                     )
-                    updated_data[field] = date_value.strftime('%Y-%m-%d') if date_value else None
+                    st.caption("💡 **Format**: `email1@example.com;email2@example.com;email3@example.com` (semicolon-separated). This format applies to all email fields below.")
+                elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
+                    updated_data[field] = _text_input_no_autofill(
+                        field_label,
+                        value=display_value,
+                        help="Enter semicolon-separated email addresses (leave empty for NULL)",
+                    )
+                elif field == 'OVERRIDE_EMAIL':
+                    updated_data[field] = _text_area_no_autofill(
+                        field_label,
+                        value=display_value,
+                        placeholder=OVERRIDE_EMAIL_PLACEHOLDER,
+                        help="Enter semicolon-separated email addresses (leave empty for NULL)",
+                    )
+                elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
+                    current_date = None
+                    has_date = False
+                    if current_value and str(current_value).strip() and current_value != 'None':
+                        try:
+                            current_date = pd.to_datetime(current_value).date()
+                            has_date = True
+                        except Exception:
+                            current_date = None
+                            has_date = False
+                    st.caption("💡 Use the checkbox to enable/disable the date. Uncheck to set to NULL.")
+                    enable_date = st.checkbox(f"Set {field_label}", value=has_date, key=f"edit_enable_{field}")
+                    if enable_date:
+                        st.caption("💡 Date will be saved when you submit the form.")
+                        date_value = st.date_input(
+                            field_label,
+                            value=current_date,
+                            help="Select effective date",
+                            key=f"edit_date_{field}"
+                        )
+                        updated_data[field] = date_value.strftime('%Y-%m-%d') if date_value else None
+                    else:
+                        updated_data[field] = None
+                        st.info(f"💡 {field_label} will be set to NULL")
                 else:
-                    updated_data[field] = None
-                    st.info(f"💡 {field_label} will be set to NULL")
-            else:
-                # Regular text fields
-                updated_data[field] = _text_input_no_autofill(
-                    field_label,
-                    value=display_value,
-                    help=f"Enter {field_label.lower()} (leave empty for NULL)",
-                )
+                    updated_data[field] = _text_input_no_autofill(
+                        field_label,
+                        value=display_value,
+                        help=f"Enter {field_label.lower()} (leave empty for NULL)",
+                    )
         
         # Submit button
         submitted = st.form_submit_button("💾 Save Changes", type="primary")
@@ -1378,7 +1587,10 @@ def show_new_entry_screen():
     st.info("""
     **📝 New Vendor Entry**: Fill in the required fields below. One row per (Vendor Number, FILE).
     """)
-    
+
+    # Badge legend: column headers aligned over the CPFR and VC badge columns
+    _render_edit_form_legend()
+
     # New entry form
     with st.form("new_vendor_form"):
         st.subheader("Vendor Information")
@@ -1387,8 +1599,9 @@ def show_new_entry_screen():
         _text_input_no_autofill("Vendor Number", value=vendor_number, disabled=True)
         
         # FILE selection - ordered: 6Months -> Tier2 -> Tier1 -> None, default to 6Months
-        col1, col2 = st.columns([2, 3])
-        with col1:
+        col_badges, col_tier = st.columns([_BADGE_COL_RATIO, _INPUT_COL_RATIO])
+        _render_badge_columns(col_badges, 'FILE')
+        with col_tier:
             file_value = st.selectbox(
                 "Tier",
                 ["6Months", "Tier2", "Tier1", "None"],
@@ -1396,67 +1609,67 @@ def show_new_entry_screen():
                 help="Tier1 requires CPFR team authorization. Select 6Months, Tier2, Tier1, or None.",
                 key="new_file_field"
             )
-        
-        # Check if Tier1 was selected and show error
-        tier1_error = file_value == "Tier1"
-        
-        # Show error message if Tier1 was attempted
-        with col2:
+
+            # Placed directly below the selectbox inside the same column so
+            # the expander/error bottom edge is flush with the selectbox.
+            tier1_error = file_value == "Tier1"
             if tier1_error:
                 st.error("⚠️ **Tier1 requires CPFR team authorization.**")
                 st.markdown(f"Please contact the CPFR team: [nmiles1@chewy.com](mailto:nmiles1@chewy.com)")
-                # Reset to default (Tier2) - this will be validated again on submission
                 file_value = "Tier2"
-        
+            else:
+                with st.expander("ℹ️ About Tiers", expanded=False):
+                    st.markdown(TIER_INFO_MARKDOWN, unsafe_allow_html=False)
+
         # Get required and editable fields
         required_fields = st.session_state.vendor_processor.get_required_fields()
         editable_fields = st.session_state.vendor_processor.get_editable_fields()
-        
-        # Create form fields
+
+        # Create form fields — each row gets a combined CPFR+VC badge column to the left
         new_vendor_data = {"Vendor Number": vendor_number, "FILE": file_value}
-        
+
         for field in editable_fields:
-            # Get display name for field label
             field_label = get_field_display_name(field)
-            
-            if field == 'Vendor Contacts':
-                new_vendor_data[field] = _text_area_no_autofill(
-                    field_label,
-                    help="Enter semicolon-separated email addresses",
-                )
-                st.caption("💡 **Format**: `email1@example.com;email2@example.com` (semicolon-separated, required)")
-            elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
-                # These email fields use text_input (single line)
-                new_vendor_data[field] = _text_input_no_autofill(
-                    field_label,
-                    help="Enter semicolon-separated email addresses (optional)",
-                )
-                st.caption("💡 Semicolon-delimited format (optional)")
-            elif field == 'OVERRIDE_EMAIL':
-                new_vendor_data[field] = _text_area_no_autofill(
-                    field_label,
-                    placeholder=OVERRIDE_EMAIL_PLACEHOLDER,
-                    help="Enter semicolon-separated email addresses (optional)",
-                )
-                st.caption("💡 Semicolon-delimited format (optional)")
-            elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
-                # Use a checkbox to enable/disable date input
-                enable_date = st.checkbox(f"Set {field_label}", key=f"enable_{field}")
-                if enable_date:
-                    date_value = st.date_input(
+
+            col_badges, col_input = st.columns([_BADGE_COL_RATIO, _INPUT_COL_RATIO])
+            _render_badge_columns(col_badges, field)
+            with col_input:
+                if field == 'Vendor Contacts':
+                    new_vendor_data[field] = _text_area_no_autofill(
                         field_label,
-                        help="Select effective date",
-                        key=f"date_{field}"
+                        help="Enter semicolon-separated email addresses",
                     )
-                    new_vendor_data[field] = date_value.strftime('%Y-%m-%d') if date_value else None
+                    st.caption("💡 **Format**: `email1@example.com;email2@example.com` (semicolon-separated, required)")
+                elif field in ['CM_Email', 'CM Manager_Email', 'SP_Email', 'SP Manager_Email']:
+                    new_vendor_data[field] = _text_input_no_autofill(
+                        field_label,
+                        help="Enter semicolon-separated email addresses (optional)",
+                    )
+                    st.caption("💡 Semicolon-delimited format (optional)")
+                elif field == 'OVERRIDE_EMAIL':
+                    new_vendor_data[field] = _text_area_no_autofill(
+                        field_label,
+                        placeholder=OVERRIDE_EMAIL_PLACEHOLDER,
+                        help="Enter semicolon-separated email addresses (optional)",
+                    )
+                    st.caption("💡 Semicolon-delimited format (optional)")
+                elif field in ['Soft Chargeback Effective Date', 'Hard Chargeback Effective Date']:
+                    enable_date = st.checkbox(f"Set {field_label}", key=f"enable_{field}")
+                    if enable_date:
+                        date_value = st.date_input(
+                            field_label,
+                            help="Select effective date",
+                            key=f"date_{field}"
+                        )
+                        new_vendor_data[field] = date_value.strftime('%Y-%m-%d') if date_value else None
+                    else:
+                        new_vendor_data[field] = None
+                        st.info(f"💡 {field_label} will be set to NULL")
                 else:
-                    new_vendor_data[field] = None
-                    st.info(f"💡 {field_label} will be set to NULL")
-            else:
-                new_vendor_data[field] = _text_input_no_autofill(
-                    field_label,
-                    help=f"Enter {field_label.lower()}",
-                )
+                    new_vendor_data[field] = _text_input_no_autofill(
+                        field_label,
+                        help=f"Enter {field_label.lower()}",
+                    )
         
         # Submit button
         submitted = st.form_submit_button("💾 Create Vendor", type="primary")
